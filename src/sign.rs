@@ -9,11 +9,11 @@ use libsignify::Codeable;
 use super::utils;
 
 /// Execute the `sign` command.
-pub fn command(key_path: PathBuf, oid: String) -> Result<()> {
+pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
     let repo = Repository::open(".").context("Failed to open git repository")?;
 
     let oid = repo
-        .revparse_single(&oid)
+        .revparse_single(&rev)
         .context("Failed to look-up git object id")?
         .id();
 

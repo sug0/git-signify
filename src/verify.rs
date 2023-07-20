@@ -9,11 +9,11 @@ use libsignify::{Codeable, Signature};
 use super::utils;
 
 /// Execute the `verify` command.
-pub fn command(key_path: PathBuf, recover: bool, oid: String) -> Result<()> {
+pub fn command(key_path: PathBuf, recover: bool, tree_rev: String) -> Result<()> {
     let repo = Repository::open(".").context("Failed to open git repository")?;
 
     let oid = repo
-        .revparse_single(&oid)
+        .revparse_single(&tree_rev)
         .context("Failed to look-up git tree oid")?
         .id();
     let tree = repo

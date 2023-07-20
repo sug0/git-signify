@@ -25,8 +25,8 @@ enum Action {
         #[arg(short = 'k', long)]
         secret_key: PathBuf,
 
-        /// The object id to sign
-        git_object_id: String,
+        /// The git revision to sign
+        git_rev: String,
     },
     /// Verify the signature contained in a tree object
     Verify {
@@ -39,7 +39,7 @@ enum Action {
         print_signed_oid: bool,
 
         /// The git tree containing a signed object
-        git_tree_oid: String,
+        git_tree: String,
     },
     /// Hash a key and return it
     Fingerprint {
@@ -55,13 +55,13 @@ fn main() -> Result<()> {
     match args.action {
         Action::Sign {
             secret_key,
-            git_object_id: oid,
-        } => sign::command(secret_key, oid),
+            git_rev: rev,
+        } => sign::command(secret_key, rev),
         Action::Verify {
             public_key,
             print_signed_oid: recover,
-            git_tree_oid: oid,
-        } => verify::command(public_key, recover, oid),
+            git_tree: rev,
+        } => verify::command(public_key, recover, rev),
         Action::Fingerprint { key } => fingerprint::command(key),
     }
 }
