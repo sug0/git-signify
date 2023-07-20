@@ -83,13 +83,15 @@ fn sign(key_path: PathBuf, oid: String) -> Result<()> {
 }
 
 fn get_secret_key(path: PathBuf) -> Result<PrivateKey> {
-    let key_data = std::fs::read_to_string(path)
-        .map(Zeroizing::new)
-        .context("Failed to read secret key")?;
+    let (mut secret_key, _) = {
+        let key_data = std::fs::read_to_string(path)
+            .map(Zeroizing::new)
+            .context("Failed to read secret key")?;
 
-    let (mut secret_key, _) = PrivateKey::from_base64(&key_data[..])
-        .map_err(Error::new)
-        .context("Failed to decode secret key")?;
+        PrivateKey::from_base64(&key_data[..])
+            .map_err(Error::new)
+            .context("Failed to decode secret key")?
+    };
 
     if secret_key.is_encrypted() {
         let passphrase = rpassword::read_password()
