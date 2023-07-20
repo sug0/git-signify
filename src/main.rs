@@ -94,7 +94,7 @@ fn get_secret_key(path: PathBuf) -> Result<PrivateKey> {
     };
 
     if secret_key.is_encrypted() {
-        let passphrase = rpassword::read_password()
+        let passphrase = rpassword::prompt_password("key passphrase: ")
             .map(Zeroizing::new)
             .context("Failed to read secret key password")?;
 
