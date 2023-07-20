@@ -7,3 +7,5 @@ A tool to sign arbitrary objects in a git repository.
 ```
 $ git signify -h
 ```
+
+Keys can be generated with [`signify`](https://man.openbsd.org/signify.1).
