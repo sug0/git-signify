@@ -7,6 +7,9 @@ edition = "2021"
 anyhow = "1.0.72"
 clap = { version = "4.3.17", features = ["derive"] }
 git2 = "0.17.2"
-libsignify = "0.5.3"
 rpassword = "7.2.0"
 zeroize = "1.6.0"
+
+[dependencies.libsignify]
+git = "https://github.com/badboy/signify-rs"
+rev = "01bd2fd4c3aad5fb5484cf41210c9e5bbe0a91cf"
