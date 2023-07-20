@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use git2::{Oid, Repository};
+use git2::{ObjectType, Oid, Repository};
 use libsignify::{Codeable, PrivateKey, PublicKey, Signature};
 use zeroize::Zeroizing;
 
@@ -46,6 +46,12 @@ enum Action {
         /// The git tree containing a signed object
         git_tree_oid: String,
     },
+    /// Hash a key and return it
+    Fingerprint {
+        /// The path to the base64 encoded key to hash
+        #[arg(short = 'k', long)]
+        key: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -61,6 +67,7 @@ fn main() -> Result<()> {
             print_signed_oid: recover,
             git_tree_oid: oid,
         } => verify(public_key, recover, oid),
+        Action::Fingerprint { key } => fingerprint(key),
     }
 }
 
@@ -151,6 +158,18 @@ fn sign(key_path: PathBuf, oid: String) -> Result<()> {
 
     println!("{tree_oid}");
     Ok(())
+}
+
+fn fingerprint(key_path: PathBuf) -> Result<()> {
+    let public_key = get_public_key(key_path)?;
+    let hash = hash_bytes(public_key.key().as_ref())?;
+    println!("{hash}");
+    Ok(())
+}
+
+#[inline]
+fn hash_bytes(bytes: &[u8]) -> Result<Oid> {
+    Oid::hash_object(ObjectType::Blob, bytes).context("Failed to hash bytes")
 }
 
 fn get_secret_key(path: PathBuf) -> Result<PrivateKey> {
