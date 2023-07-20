@@ -19,6 +19,19 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Action {
+    /// Primitive signing and verification commands
+    #[command(subcommand)]
+    Raw(RawAction),
+    /// Hash a key and return it
+    Fingerprint {
+        /// The path to the base64 encoded key to hash
+        #[arg(short = 'k', long)]
+        key: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum RawAction {
     /// Sign an arbitrary object and return a tree with the signature
     Sign {
         /// The path to the base64 encoded secret key to sign with
@@ -41,27 +54,21 @@ enum Action {
         /// The git tree containing a signed object
         git_tree: String,
     },
-    /// Hash a key and return it
-    Fingerprint {
-        /// The path to the base64 encoded key to hash
-        #[arg(short = 'k', long)]
-        key: PathBuf,
-    },
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.action {
-        Action::Sign {
+        Action::Raw(RawAction::Sign {
             secret_key,
             git_rev: rev,
-        } => sign::command(secret_key, rev),
-        Action::Verify {
+        }) => sign::command(secret_key, rev),
+        Action::Raw(RawAction::Verify {
             public_key,
             print_signed_oid: recover,
             git_tree: rev,
-        } => verify::command(public_key, recover, rev),
+        }) => verify::command(public_key, recover, rev),
         Action::Fingerprint { key } => fingerprint::command(key),
     }
 }
