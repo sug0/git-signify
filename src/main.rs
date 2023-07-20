@@ -67,10 +67,13 @@ fn main() -> Result<()> {
 fn verify(key_path: PathBuf, recover: bool, oid: String) -> Result<()> {
     let repo = Repository::open(".").context("Failed to open git repository")?;
 
-    let oid = Oid::from_str(&oid).context("Failed to parse git tree oid")?;
+    let oid = repo
+        .revparse_single(&oid)
+        .context("Failed to look-up git tree oid")?
+        .id();
     let tree = repo
         .find_tree(oid)
-        .context("Failed to look-up tree oid in the repository")?;
+        .context("No tree object found for the given revision")?;
 
     let object = tree
         .get_name("object")
@@ -114,9 +117,10 @@ fn verify(key_path: PathBuf, recover: bool, oid: String) -> Result<()> {
 fn sign(key_path: PathBuf, oid: String) -> Result<()> {
     let repo = Repository::open(".").context("Failed to open git repository")?;
 
-    let oid = Oid::from_str(&oid).context("Failed to parse git object id")?;
-    repo.find_object(oid, None)
-        .context("Failed to look-up object in the repository")?;
+    let oid = repo
+        .revparse_single(&oid)
+        .context("Failed to look-up git object id")?
+        .id();
 
     let object_blob = repo
         .blob(oid.as_bytes())
