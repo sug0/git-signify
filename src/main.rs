@@ -1,17 +1,11 @@
-use std::error;
-use std::fmt;
+mod utils;
+
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use git2::{ObjectType, Oid, Repository};
-use libsignify::{Codeable, PrivateKey, PublicKey, Signature};
-use zeroize::Zeroizing;
-
-#[derive(Debug)]
-pub struct Error<E> {
-    inner: E,
-}
+use git2::{Oid, Repository};
+use libsignify::{Codeable, Signature};
 
 /// A git sub-command to sign arbitrary objects
 #[derive(Parser)]
@@ -102,15 +96,15 @@ fn verify(key_path: PathBuf, recover: bool, oid: String) -> Result<()> {
             .as_blob()
             .context("The signature object is not a blob")?;
         Signature::from_bytes(signature.content())
-            .map_err(Error::new)
+            .map_err(utils::Error::new)
             .context("Failed to parse signature")?
     };
 
-    let public_key = get_public_key(key_path)?;
+    let public_key = utils::get_public_key(key_path)?;
 
     public_key
         .verify(dereferenced_obj, &signature)
-        .map_err(Error::new)
+        .map_err(utils::Error::new)
         .context("Failed to verify signature")?;
 
     if recover {
@@ -133,7 +127,7 @@ fn sign(key_path: PathBuf, oid: String) -> Result<()> {
         .blob(oid.as_bytes())
         .context("Failed to write object id to the git store")?;
 
-    let secret_key = get_secret_key(key_path)?;
+    let secret_key = utils::get_secret_key(key_path)?;
     let signature = secret_key.sign(oid.as_bytes()).as_bytes();
     let signature_blob = repo
         .blob(&signature)
@@ -161,62 +155,8 @@ fn sign(key_path: PathBuf, oid: String) -> Result<()> {
 }
 
 fn fingerprint(key_path: PathBuf) -> Result<()> {
-    let public_key = get_public_key(key_path)?;
-    let hash = hash_bytes(public_key.key().as_ref())?;
+    let public_key = utils::get_public_key(key_path)?;
+    let hash = utils::hash_bytes(public_key.key().as_ref())?;
     println!("{hash}");
     Ok(())
-}
-
-#[inline]
-fn hash_bytes(bytes: &[u8]) -> Result<Oid> {
-    Oid::hash_object(ObjectType::Blob, bytes).context("Failed to hash bytes")
-}
-
-fn get_secret_key(path: PathBuf) -> Result<PrivateKey> {
-    let (mut secret_key, _) = {
-        let key_data = std::fs::read_to_string(path)
-            .map(Zeroizing::new)
-            .context("Failed to read secret key")?;
-
-        PrivateKey::from_base64(&key_data[..])
-            .map_err(Error::new)
-            .context("Failed to decode secret key")?
-    };
-
-    if secret_key.is_encrypted() {
-        let passphrase = rpassword::prompt_password("key passphrase: ")
-            .map(Zeroizing::new)
-            .context("Failed to read secret key password")?;
-
-        secret_key
-            .decrypt_with_password(&passphrase)
-            .map_err(Error::new)
-            .context("Failed to decrypt secret key")?;
-    }
-
-    Ok(secret_key)
-}
-
-fn get_public_key(path: PathBuf) -> Result<PublicKey> {
-    let key_data = std::fs::read_to_string(path).context("Failed to read public key")?;
-
-    let (public_key, _) = PublicKey::from_base64(&key_data[..])
-        .map_err(Error::new)
-        .context("Failed to decode public key")?;
-
-    Ok(public_key)
-}
-
-impl<E: fmt::Display> fmt::Display for Error<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.inner)
-    }
-}
-
-impl<E: fmt::Display + fmt::Debug> error::Error for Error<E> {}
-
-impl<E> Error<E> {
-    fn new(inner: E) -> Self {
-        Self { inner }
-    }
 }
