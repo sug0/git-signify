@@ -4,5 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.72"
 clap = { version = "4.3.17", features = ["derive"] }
+git2 = "0.17.2"
 libsignify = "0.5.3"
+rpassword = "7.2.0"
+zeroize = "1.6.0"
