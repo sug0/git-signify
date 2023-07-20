@@ -53,6 +53,10 @@ fn sign(key_path: PathBuf, oid: String) -> Result<()> {
     repo.find_object(oid, None)
         .context("Failed to look-up object in the repository")?;
 
+    let object_blob = repo
+        .blob(oid.as_bytes())
+        .context("Failed to write object id to the git store")?;
+
     let secret_key = get_secret_key(key_path)?;
     let signature = secret_key.sign(oid.as_bytes()).as_bytes();
     let signature_blob = repo
@@ -64,7 +68,7 @@ fn sign(key_path: PathBuf, oid: String) -> Result<()> {
         .context("Failed to get a git tree object builder")?;
 
     tree_builder
-        .insert("object", oid, 0o100644)
+        .insert("object", object_blob, 0o100644)
         .context("Failed to write object to the tree")?;
     tree_builder
         .insert("signature", signature_blob, 0o100644)
