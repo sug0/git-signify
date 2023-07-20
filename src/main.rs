@@ -202,7 +202,7 @@ fn get_public_key(path: PathBuf) -> Result<PublicKey> {
 
     let (public_key, _) = PublicKey::from_base64(&key_data[..])
         .map_err(Error::new)
-        .context("Failed to decode secret key")?;
+        .context("Failed to decode public key")?;
 
     Ok(public_key)
 }
