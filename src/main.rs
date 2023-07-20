@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use git2::{Oid, Repository};
-use libsignify::{Codeable, PrivateKey};
+use libsignify::{Codeable, PrivateKey, PublicKey, Signature};
 use zeroize::Zeroizing;
 
 #[derive(Debug)]
@@ -24,7 +24,7 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Action {
-    /// Sign an arbitrary git object
+    /// Sign an arbitrary object and return a tree with the signature
     Sign {
         /// The path to the base64 encoded secret key to sign with
         #[arg(short = 'k', long)]
@@ -32,6 +32,19 @@ enum Action {
 
         /// The object id to sign
         git_object_id: String,
+    },
+    /// Verify the signature contained in a tree object
+    Verify {
+        /// The path to the base64 encoded public key to verify with
+        #[arg(short = 'k', long)]
+        public_key: PathBuf,
+
+        /// Print the id of the signed object to stdout
+        #[arg(short = 'p', long)]
+        print_signed_oid: bool,
+
+        /// The git tree containing a signed object
+        git_tree_oid: String,
     },
 }
 
@@ -43,7 +56,59 @@ fn main() -> Result<()> {
             secret_key,
             git_object_id: oid,
         } => sign(secret_key, oid),
+        Action::Verify {
+            public_key,
+            print_signed_oid: recover,
+            git_tree_oid: oid,
+        } => verify(public_key, recover, oid),
     }
+}
+
+fn verify(key_path: PathBuf, recover: bool, oid: String) -> Result<()> {
+    let repo = Repository::open(".").context("Failed to open git repository")?;
+
+    let oid = Oid::from_str(&oid).context("Failed to parse git tree oid")?;
+    let tree = repo
+        .find_tree(oid)
+        .context("Failed to look-up tree oid in the repository")?;
+
+    let object = tree
+        .get_name("object")
+        .context("Failed to look-up signed object in the tree")?
+        .to_object(&repo)
+        .context("The signed object could not be retrieved")?;
+    let object = object
+        .as_blob()
+        .context("The signed object is not a blob")?;
+    let dereferenced_obj = object.content();
+
+    let signature = {
+        let signature = tree
+            .get_name("signature")
+            .context("Failed to look-up signature in the tree")?
+            .to_object(&repo)
+            .context("The signature object could not be retrieved")?;
+        let signature = signature
+            .as_blob()
+            .context("The signature object is not a blob")?;
+        Signature::from_bytes(signature.content())
+            .map_err(Error::new)
+            .context("Failed to parse signature")?
+    };
+
+    let public_key = get_public_key(key_path)?;
+
+    public_key
+        .verify(dereferenced_obj, &signature)
+        .map_err(Error::new)
+        .context("Failed to verify signature")?;
+
+    if recover {
+        let oid = Oid::from_bytes(dereferenced_obj).context("Failed to parse git object id")?;
+        println!("{oid}");
+    }
+
+    Ok(())
 }
 
 fn sign(key_path: PathBuf, oid: String) -> Result<()> {
@@ -66,6 +131,8 @@ fn sign(key_path: PathBuf, oid: String) -> Result<()> {
     let mut tree_builder = repo
         .treebuilder(None)
         .context("Failed to get a git tree object builder")?;
+
+    // TODO: insert a tree entry containing the version of this program
 
     tree_builder
         .insert("object", object_blob, 0o100644)
@@ -105,6 +172,16 @@ fn get_secret_key(path: PathBuf) -> Result<PrivateKey> {
     }
 
     Ok(secret_key)
+}
+
+fn get_public_key(path: PathBuf) -> Result<PublicKey> {
+    let key_data = std::fs::read_to_string(path).context("Failed to read public key")?;
+
+    let (public_key, _) = PublicKey::from_base64(&key_data[..])
+        .map_err(Error::new)
+        .context("Failed to decode secret key")?;
+
+    Ok(public_key)
 }
 
 impl<E: fmt::Display> fmt::Display for Error<E> {
