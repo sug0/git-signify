@@ -10,7 +10,7 @@ use crate::utils;
 
 /// Execute the `sign` command.
 pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
-    let repo = Repository::open(".").context("Failed to open git repository")?;
+    let repo = utils::open_repository()?;
     let secret_key = utils::get_secret_key(key_path)?;
     let tree_oid = sign(&repo, &secret_key, &rev)?;
     println!("{tree_oid}");

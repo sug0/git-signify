@@ -10,7 +10,7 @@ use crate::utils;
 
 /// Execute the `verify` command.
 pub fn command(key_path: PathBuf, recover: bool, tree_rev: String) -> Result<()> {
-    let repo = Repository::open(".").context("Failed to open git repository")?;
+    let repo = utils::open_repository()?;
     let public_key = utils::get_public_key(key_path)?;
     let recovered_oid = verify(&repo, &public_key, &tree_rev, recover)?;
     if let Some(recovered_oid) = recovered_oid {

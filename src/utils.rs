@@ -5,7 +5,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use git2::{ObjectType, Oid};
+use git2::{ObjectType, Oid, Repository, RepositoryOpenFlags};
 use libsignify::{Codeable, PrivateKey, PublicKey};
 use zeroize::Zeroizing;
 
@@ -72,4 +72,14 @@ pub fn get_secret_key(path: PathBuf) -> Result<PrivateKey> {
     }
 
     Ok(secret_key)
+}
+
+/// Try to find and open a git repository.
+pub fn open_repository() -> Result<Repository> {
+    Repository::open_ext(
+        ".",
+        RepositoryOpenFlags::empty(),
+        &[] as &[&std::ffi::OsStr],
+    )
+    .context("Failed to open git repository")
 }
