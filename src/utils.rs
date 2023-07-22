@@ -4,10 +4,83 @@ use std::error;
 use std::fmt;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
-use git2::{ObjectType, Oid, Repository, RepositoryOpenFlags};
-use libsignify::{Codeable, PrivateKey, PublicKey};
+use anyhow::{anyhow, Context, Result};
+use git2::{Blob, ObjectType, Oid, Repository, RepositoryOpenFlags};
+use libsignify::{Codeable, PrivateKey, PublicKey, Signature};
 use zeroize::Zeroizing;
+
+/// A signature stored in a git tree object.
+pub struct TreeSignature<'repo> {
+    /// Pointer to the object that was signed.
+    pub object_pointer: Blob<'repo>,
+    /// The signature over the git object.
+    pub signature: Signature,
+}
+
+impl<'repo> TreeSignature<'repo> {
+    /// Load a [`TreeSignature`] at the given `tree_rev` from the
+    /// provided git repository.
+    #[inline]
+    pub fn load(repo: &'repo Repository, tree_rev: &str) -> Result<Self> {
+        let oid = repo
+            .revparse_single(tree_rev)
+            .context("Failed to look-up git tree oid")?
+            .id();
+        Self::load_oid(repo, oid)
+    }
+
+    /// Like [`TreeSignature::load`], but uses a concrete revision pointing
+    /// to the tree signature.
+    pub fn load_oid(repo: &'repo Repository, oid: Oid) -> Result<Self> {
+        let tree = repo
+            .find_tree(oid)
+            .context("No tree object found for the given revision")?;
+
+        let object = tree
+            .get_name("object")
+            .context("Failed to look-up signed object in the tree")?
+            .to_object(repo)
+            .context("The signed object could not be retrieved")?;
+        let object_pointer = match object.into_blob() {
+            Ok(ptr) => ptr,
+            Err(_) => return Err(anyhow!("The signed object is not a blob")),
+        };
+
+        let signature = {
+            let signature = tree
+                .get_name("signature")
+                .context("Failed to look-up signature in the tree")?
+                .to_object(repo)
+                .context("The signature object could not be retrieved")?;
+            let signature = signature
+                .as_blob()
+                .context("The signature object is not a blob")?;
+            Signature::from_bytes(signature.content())
+                .map_err(Error::new)
+                .context("Failed to parse signature")?
+        };
+
+        Ok(Self {
+            signature,
+            object_pointer,
+        })
+    }
+
+    /// Verify the authenticity of this [`TreeSignature`].
+    pub fn verify(&self, public_key: &PublicKey) -> Result<()> {
+        let dereferenced_obj = self.object_pointer.content();
+        public_key
+            .verify(dereferenced_obj, &self.signature)
+            .map_err(Error::new)
+            .context("Failed to verify signature")
+    }
+
+    /// Dereference the inner object pointer.
+    #[inline]
+    pub fn dereference(&self) -> Result<Oid> {
+        Oid::from_bytes(self.object_pointer.content()).context("Failed to parse git object id")
+    }
+}
 
 /// An error type.
 #[derive(Debug)]
