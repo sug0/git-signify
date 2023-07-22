@@ -2,7 +2,7 @@ mod fingerprint;
 mod raw;
 mod sign;
 mod utils;
-//mod verify;
+mod verify;
 
 use std::path::PathBuf;
 
@@ -36,6 +36,15 @@ enum Action {
         secret_key: PathBuf,
 
         /// The git revision to sign
+        git_rev: String,
+    },
+    /// Verify the signature over some git revision
+    Verify {
+        /// The path to the base64 encoded public key to verify with
+        #[arg(short = 'k', long)]
+        public_key: PathBuf,
+
+        /// The signed git revision to verify
         git_rev: String,
     },
 }
@@ -84,5 +93,9 @@ fn main() -> Result<()> {
             secret_key,
             git_rev: rev,
         } => sign::command(secret_key, rev),
+        Action::Verify {
+            public_key,
+            git_rev: rev,
+        } => verify::command(public_key, rev),
     }
 }
