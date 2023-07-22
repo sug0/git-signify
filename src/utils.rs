@@ -162,3 +162,7 @@ pub fn open_repository() -> Result<Repository> {
 pub fn craft_reference(key_fingerprint: Oid, signed_object: Oid) -> String {
     format!("refs/signify/signatures/{key_fingerprint}/{signed_object}")
 }
+
+/// Git refspec describing all signify references.
+#[allow(dead_code)]
+pub const ALL_SIGNIFY_REFS: &str = "refs/signify/*";
