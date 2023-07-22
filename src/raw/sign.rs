@@ -17,8 +17,8 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
     Ok(())
 }
 
-/// Sign the revision `rev` with the secret key `key`, write the results
-/// to `repo`, and return the corresponding object id of the signature tree.
+/// Sign the revision `rev` with the given secret key, write the results
+/// to `repo` and return the object id of the resulting signature tree.
 pub fn sign(repo: &Repository, secret_key: &PrivateKey, rev: &str) -> Result<Oid> {
     let oid = repo
         .revparse_single(rev)
