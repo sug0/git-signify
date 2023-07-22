@@ -1,4 +1,6 @@
 mod fingerprint;
+mod pull;
+mod push;
 mod raw;
 mod sign;
 mod utils;
@@ -46,6 +48,16 @@ enum Action {
 
         /// The signed git revision to verify
         git_rev: String,
+    },
+    /// Push signify data to a remote repository
+    Push {
+        /// The name of the remote repository
+        remote: String,
+    },
+    /// Pull signify data from a remote repository
+    Pull {
+        /// The name of the remote repository
+        remote: String,
     },
 }
 
@@ -97,5 +109,7 @@ fn main() -> Result<()> {
             public_key,
             git_rev: rev,
         } => verify::command(public_key, rev),
+        Action::Push { remote } => push::command(remote),
+        Action::Pull { remote } => pull::command(remote),
     }
 }
