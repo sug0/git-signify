@@ -18,7 +18,7 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
         tree_sig.dereference()?
     };
     let key_fingerprint = utils::hash_bytes(&secret_key.public().key()[..])?;
-    let reference = utils::craft_reference(key_fingerprint, signed_object);
+    let reference = utils::craft_signature_reference(key_fingerprint, signed_object);
     repo.reference(
         &reference, tree_oid,
         // references to signatures will never change, so it is

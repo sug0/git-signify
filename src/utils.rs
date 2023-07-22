@@ -159,7 +159,7 @@ pub fn open_repository() -> Result<Repository> {
 
 /// Craft a git reference to an object signed by a key with the given
 /// fingerprint.
-pub fn craft_reference(key_fingerprint: Oid, signed_object: Oid) -> String {
+pub fn craft_signature_reference(key_fingerprint: Oid, signed_object: Oid) -> String {
     format!("refs/signify/signatures/{key_fingerprint}/{signed_object}")
 }
 
