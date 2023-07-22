@@ -3,17 +3,25 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use git2::Repository;
-use libsignify::Codeable;
+use git2::{Oid, Repository};
+use libsignify::{Codeable, PrivateKey};
 
 use super::utils;
 
 /// Execute the `sign` command.
 pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
     let repo = Repository::open(".").context("Failed to open git repository")?;
+    let secret_key = utils::get_secret_key(key_path)?;
+    let tree_oid = sign(&repo, &secret_key, &rev)?;
+    println!("{tree_oid}");
+    Ok(())
+}
 
+/// Sign the revision `rev` with the secret key `key`, write the results
+/// to `repo`, and return the corresponding object id of the signature tree.
+pub fn sign(repo: &Repository, secret_key: &PrivateKey, rev: &str) -> Result<Oid> {
     let oid = repo
-        .revparse_single(&rev)
+        .revparse_single(rev)
         .context("Failed to look-up git object id")?
         .id();
 
@@ -21,7 +29,6 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
         .blob(oid.as_bytes())
         .context("Failed to write object id to the git store")?;
 
-    let secret_key = utils::get_secret_key(key_path)?;
     let signature = secret_key.sign(oid.as_bytes()).as_bytes();
     let signature_blob = repo
         .blob(&signature)
@@ -44,6 +51,5 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
         .write()
         .context("Failed to write tree to the object store")?;
 
-    println!("{tree_oid}");
-    Ok(())
+    Ok(tree_oid)
 }
