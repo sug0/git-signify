@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use git2::{Oid, Repository};
 use libsignify::{Codeable, PrivateKey};
 
-use super::utils;
+use crate::utils;
 
 /// Execute the `sign` command.
 pub fn command(key_path: PathBuf, rev: String) -> Result<()> {

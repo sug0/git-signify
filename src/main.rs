@@ -1,7 +1,8 @@
 mod fingerprint;
-mod sign;
+mod raw;
+//mod sign;
 mod utils;
-mod verify;
+//mod verify;
 
 use std::path::PathBuf;
 
@@ -63,12 +64,12 @@ fn main() -> Result<()> {
         Action::Raw(RawAction::Sign {
             secret_key,
             git_rev: rev,
-        }) => sign::command(secret_key, rev),
+        }) => raw::sign::command(secret_key, rev),
         Action::Raw(RawAction::Verify {
             public_key,
             print_signed_oid: recover,
             git_tree: rev,
-        }) => verify::command(public_key, recover, rev),
+        }) => raw::verify::command(public_key, recover, rev),
         Action::Fingerprint { key } => fingerprint::command(key),
     }
 }

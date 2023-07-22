@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use git2::{Oid, Repository};
 use libsignify::{Codeable, Signature};
 
-use super::utils;
+use crate::utils;
 
 /// Execute the `verify` command.
 pub fn command(key_path: PathBuf, recover: bool, tree_rev: String) -> Result<()> {
