@@ -1,6 +1,6 @@
 mod fingerprint;
 mod raw;
-//mod sign;
+mod sign;
 mod utils;
 //mod verify;
 
@@ -28,6 +28,15 @@ enum Action {
         /// The path to the base64 encoded key to hash
         #[arg(short = 'k', long)]
         key: PathBuf,
+    },
+    /// Sign an arbitrary object
+    Sign {
+        /// The path to the base64 encoded secret key to sign with
+        #[arg(short = 'k', long)]
+        secret_key: PathBuf,
+
+        /// The git revision to sign
+        git_rev: String,
     },
 }
 
@@ -71,5 +80,9 @@ fn main() -> Result<()> {
             git_tree: rev,
         }) => raw::verify::command(public_key, recover, rev),
         Action::Fingerprint { key } => fingerprint::command(key),
+        Action::Sign {
+            secret_key,
+            git_rev: rev,
+        } => sign::command(secret_key, rev),
     }
 }
