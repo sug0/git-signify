@@ -31,7 +31,7 @@ verify a release of `git-signify` itself:
 ```
 $ git pull --tags
 $ git signify pull
-$ git signify verify -k keys/releases.pub v0.3.0
+$ git signify verify -k <(curl -sfL https://gandas.us.to/keys/git.pub) v0.3.0
 ```
 
 To sign git revisions, run something akin to:
