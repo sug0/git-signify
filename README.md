@@ -42,7 +42,7 @@ $ git signify sign -k <secret-key> v0.3.0
 
 ## In-depth
 
-### Brief overview of this program works
+### Brief overview of how this program works
 
 `git-signify` writes a tree object to some git repository containing the
 following blobs:
@@ -54,7 +54,7 @@ following blobs:
 
 Where `object` stores the raw (20 byte) object id of some git object
 to be signed, and `signature` stores the signature over `object`. The
-tree's hash is returned by `git signify sign`.
+tree's hash is returned by `git signify raw sign`.
 
 ### Storing signatures in tags
 
@@ -71,7 +71,7 @@ $ git signify raw verify -h
 The suggested approach to store signatures in tags is the following:
 
 ```
-$ SIGNATURE_TREE=$(git signify sign -k $SECRET_KEY $OBJECT_TO_SIGN)
+$ SIGNATURE_TREE=$(git signify raw sign -k $SECRET_KEY $OBJECT_TO_SIGN)
 $ SIGNATURE_COMMIT=$(git commit-tree $SIGNATURE_TREE -m Signature)
 $ git tag signature-$OBJECT_TO_SIGN $SIGNATURE_COMMIT
 $ git push --tags
