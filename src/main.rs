@@ -6,6 +6,7 @@ mod sign;
 mod utils;
 mod verify;
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -52,12 +53,12 @@ enum Action {
     /// Push signify data to a remote repository
     Push {
         /// The name of the remote repository
-        remote: String,
+        remote: Option<Cow<'static, str>>,
     },
     /// Pull signify data from a remote repository
     Pull {
         /// The name of the remote repository
-        remote: String,
+        remote: Option<Cow<'static, str>>,
     },
 }
 
@@ -109,7 +110,7 @@ fn main() -> Result<()> {
             public_key,
             git_rev: rev,
         } => verify::command(public_key, rev),
-        Action::Push { remote } => push::command(remote),
-        Action::Pull { remote } => pull::command(remote),
+        Action::Push { remote } => push::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
+        Action::Pull { remote } => pull::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
     }
 }
