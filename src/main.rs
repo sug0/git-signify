@@ -3,6 +3,7 @@ mod pull;
 mod push;
 mod raw;
 mod sign;
+mod store;
 mod utils;
 mod verify;
 
@@ -60,6 +61,12 @@ enum Action {
         /// The name of the remote repository
         remote: Option<Cow<'static, str>>,
     },
+    /// Store a reference to a public key
+    Store {
+        /// The path to the base64 encoded public key to store
+        #[arg(short = 'k', long)]
+        key: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -112,5 +119,6 @@ fn main() -> Result<()> {
         } => verify::command(public_key, rev),
         Action::Push { remote } => push::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
         Action::Pull { remote } => pull::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
+        Action::Store { key } => store::command(key),
     }
 }
