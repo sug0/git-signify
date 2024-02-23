@@ -164,5 +164,4 @@ pub fn craft_signature_reference(key_fingerprint: Oid, signed_object: Oid) -> St
 }
 
 /// Git refspec describing all signify references.
-#[allow(dead_code)]
 pub const ALL_SIGNIFY_REFS: &str = "refs/signify/*";
