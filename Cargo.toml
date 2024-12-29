@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.95"
 clap = { version = "4.5.23", features = ["derive", "env"] }
+either = "1.13.0"
 git2 = "0.19.0"
 minisign = "0.7.9"
 rpassword = "7.3.1"

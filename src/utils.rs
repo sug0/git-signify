@@ -166,46 +166,107 @@ impl<'repo> TreeSignature<'repo> {
     /// Like [`TreeSignature::load`], but uses a concrete revision pointing
     /// to the tree signature.
     pub fn load_oid(repo: &'repo Repository, oid: Oid) -> Result<Self> {
-        let tree = repo
-            .find_tree(oid)
-            .context("No tree object found for the given revision")?;
+        let object = repo
+            .find_object(oid, None)
+            .context("No git object found for the given revision")?;
 
-        let (version, algorithm) = tree.get_name("version").map_or(
-            Ok((TreeSignatureVersion::V0, TreeSignatureAlgo::Signify)),
-            |version_tree_entry| {
-                let version_obj = version_tree_entry
-                    .to_object(repo)
-                    .context("The tree signature version could not be retrieved")?;
-                let version_blob = match version_obj.into_blob() {
-                    Ok(blob) => blob,
-                    Err(_) => {
-                        return Err(anyhow!("The tree signature version object is not a blob"))
-                    }
-                };
-                let version = TreeSignatureVersion::from_blob(version_blob)?;
+        match object.kind().context(
+            "Failed to determine kind of git object, while determining version of the signature",
+        )? {
+            ObjectType::Tree => Self::load_oid_v0(repo, object),
+            ObjectType::Commit => Self::load_oid_v1(repo, object),
+            _ => anyhow::bail!(
+                "Invalid object kind provided, while loading tree signature with oid={oid}"
+            ),
+        }
+    }
 
-                let algorithm_obj = tree
-                    .get_name("algorithm")
-                    .context("Failed to look-up tree signature algorithm")?
-                    .to_object(repo)
-                    .context("The tree signature algorithm could not be retrieved")?;
-                let algorithm_blob = match algorithm_obj.into_blob() {
-                    Ok(blob) => blob,
-                    Err(_) => {
-                        return Err(anyhow!("The tree signature algorithm object is not a blob"))
-                    }
-                };
-                let algorithm = TreeSignatureAlgo::from_blob(algorithm_blob)?;
-
-                anyhow::Ok((version, algorithm))
-            },
-        )?;
+    /// Load a v0 [`TreeSignature`].
+    pub fn load_oid_v0(repo: &'repo Repository, object: Object<'repo>) -> Result<Self> {
+        let tree = object.as_tree().with_context(|| {
+            format!(
+                "No tree signature found for object with oid={}",
+                object.id()
+            )
+        })?;
 
         let object_pointer = tree
             .get_name("object")
             .context("Failed to look-up signed object in the tree")?
             .to_object(repo)
             .context("The signed object could not be retrieved")?;
+        let signature = {
+            let signature = tree
+                .get_name("signature")
+                .context("Failed to look-up signature in the tree")?
+                .to_object(repo)
+                .context("The signature object could not be retrieved")?;
+            signature
+                .into_blob()
+                .map_err(|_| anyhow!("The signature object in oid={} is not a blob", object.id()))?
+        };
+
+        Ok(Self {
+            signature,
+            object_pointer,
+            version: TreeSignatureVersion::V0,
+            algorithm: TreeSignatureAlgo::Signify,
+        })
+    }
+
+    /// Load a v1 [`TreeSignature`].
+    pub fn load_oid_v1(repo: &'repo Repository, object: Object<'repo>) -> Result<Self> {
+        let commit = object
+            .as_commit()
+            .context("Failed to retrieve v1 git commit with signature")?;
+        let tree = commit
+            .tree()
+            .context("Failed to retrieve v1 git tree with signature")?;
+
+        let version = {
+            let version_obj = tree
+                .get_name("version")
+                .context("Failed to look-up tree signature version")?
+                .to_object(repo)
+                .context("The tree signature version could not be retrieved")?;
+            let version_blob = match version_obj.into_blob() {
+                Ok(blob) => blob,
+                Err(_) => return Err(anyhow!("The tree signature version object is not a blob")),
+            };
+            TreeSignatureVersion::from_blob(version_blob)?
+        };
+        let algorithm = {
+            let algorithm_obj = tree
+                .get_name("algorithm")
+                .context("Failed to look-up tree signature algorithm")?
+                .to_object(repo)
+                .context("The tree signature algorithm could not be retrieved")?;
+            let algorithm_blob = match algorithm_obj.into_blob() {
+                Ok(blob) => blob,
+                Err(_) => return Err(anyhow!("The tree signature algorithm object is not a blob")),
+            };
+            TreeSignatureAlgo::from_blob(algorithm_blob)?
+        };
+
+        let object_pointer = tree.get_name("object").map_or_else(
+            || {
+                Ok(commit
+                    .parent(0)
+                    .context(
+                        "No signed `object` in the tree signature nor a parent commit \
+                             to be signed could be found",
+                    )?
+                    .into_object())
+            },
+            |entry| {
+                entry.to_object(repo).with_context(|| {
+                    format!(
+                        "The signed object with oid={} could not be cast to a git object",
+                        entry.id()
+                    )
+                })
+            },
+        )?;
 
         let signature = {
             let signature = tree
@@ -215,7 +276,7 @@ impl<'repo> TreeSignature<'repo> {
                 .context("The signature object could not be retrieved")?;
             signature
                 .into_blob()
-                .map_err(|_| anyhow!("The signature object in {oid} is not a blob"))?
+                .map_err(|_| anyhow!("The signature object in oid={} is not a blob", object.id()))?
         };
 
         Ok(Self {
