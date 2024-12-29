@@ -90,7 +90,7 @@ pub fn sign(repo: &Repository, secret_key: &utils::PrivateKey, rev: &str) -> Res
             None,
             &commit_author,
             &commit_author,
-            "git-signify signature",
+            &format!("git-signify signature over {rev}"),
             &tree,
             &parents,
         )
