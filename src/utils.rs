@@ -2,31 +2,54 @@
 
 use std::error;
 use std::fmt;
+use std::io::Cursor;
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context, Result};
-use git2::{Blob, ObjectType, Oid, Repository, RepositoryOpenFlags};
-use libsignify::{Codeable, Signature};
+use git2::{Blob, Object, ObjectType, Oid, Repository, RepositoryOpenFlags};
+use libsignify::Codeable;
 use zeroize::Zeroizing;
 
 /// Private key used to sign git objects.
 pub enum PrivateKey {
     /// Private key originating from [`libsignify`].
     Signify(libsignify::PrivateKey),
+    /// Private key originating from [`minisign`].
+    Minisign(minisign::SecretKey),
 }
 
 impl PrivateKey {
     /// Return the [`PublicKey`] associated with this [`PrivateKey`].
-    pub fn public_key(&self) -> PublicKey {
+    pub fn public_key(&self) -> Result<PublicKey> {
         match self {
-            Self::Signify(private_key) => PublicKey::Signify(private_key.public()),
+            Self::Signify(private_key) => Ok(PublicKey::Signify(private_key.public())),
+            Self::Minisign(private_key) => Ok(PublicKey::Minisign(
+                minisign::PublicKey::from_secret_key(private_key)
+                    .context("Failed to convert minisign private key to public key")?,
+            )),
         }
     }
 
     /// Sign a message using the given private key.
-    pub fn sign<T: AsRef<[u8]>>(&self, msg: T) -> Vec<u8> {
+    pub fn sign<T: AsRef<[u8]>>(&self, msg: T) -> Result<Vec<u8>> {
         match self {
-            Self::Signify(private_key) => private_key.sign(msg.as_ref()).as_bytes(),
+            Self::Signify(private_key) => Ok(private_key
+                .sign(msg.as_ref())
+                .to_file_encoding("signed with git-signify via libsignify")),
+            Self::Minisign(private_key) => {
+                let signature_box =
+                    minisign::sign(None, private_key, Cursor::new(msg.as_ref()), None, None)
+                        .context("Failed to sign git object with minisign private key")?;
+                Ok(String::from(signature_box).into_bytes())
+            }
+        }
+    }
+
+    /// Return the algorithm of this [`PrivateKey`].
+    pub const fn algorithm(&self) -> TreeSignatureAlgo {
+        match self {
+            Self::Signify(_) => TreeSignatureAlgo::Signify,
+            Self::Minisign(_) => TreeSignatureAlgo::Minisign,
         }
     }
 }
@@ -35,15 +58,18 @@ impl PrivateKey {
 pub enum PublicKey {
     /// Public key originating from [`libsignify`].
     Signify(libsignify::PublicKey),
+    /// Public key originating from [`minisign`].
+    Minisign(minisign::PublicKey),
 }
 
 impl PublicKey {
     /// Compute the fingerprint of the given public key.
     pub fn fingerprint(&self) -> Result<Oid> {
         match self {
-            Self::Signify(public_key) => {
-                hash_bytes(public_key.key()).context("Failed to compute public key fingerprint")
-            }
+            Self::Signify(public_key) => hash_bytes(public_key.key())
+                .context("Failed to compute signify public key fingerprint"),
+            Self::Minisign(public_key) => hash_bytes(public_key.to_bytes())
+                .context("Failed to compute minisign public key fingerprint"),
         }
     }
 }
@@ -52,12 +78,43 @@ impl PublicKey {
 pub enum TreeSignatureVersion {
     /// Version 0 tree signatures.
     V0,
+    /// Version 1 tree signatures.
+    V1,
+}
+
+impl TreeSignatureVersion {
+    /// Parse a [`TreeSignatureVersion`] from a git [`Blob`].
+    pub fn from_blob(blob: Blob<'_>) -> Result<Self> {
+        match blob.content() {
+            b"v0" => Ok(Self::V0),
+            b"v1" => Ok(Self::V1),
+            blob => Err(anyhow!(
+                "Invalid tree signature version {:?}",
+                String::from_utf8_lossy(blob)
+            )),
+        }
+    }
+
+    /// Return the current version.
+    pub const fn current() -> Self {
+        TreeSignatureVersion::V1
+    }
+
+    /// Encode the version as a string.
+    pub const fn as_str(&self) -> &str {
+        match self {
+            Self::V0 => "v0",
+            Self::V1 => "v1",
+        }
+    }
 }
 
 /// Enumeration of all possible algorithms of a [`TreeSignature`].
 pub enum TreeSignatureAlgo {
     /// Signify key.
     Signify,
+    /// Minisign key.
+    Minisign,
 }
 
 impl TreeSignatureAlgo {
@@ -65,40 +122,31 @@ impl TreeSignatureAlgo {
     pub fn from_blob(blob: Blob<'_>) -> Result<Self> {
         match blob.content() {
             b"signify" => Ok(Self::Signify),
+            b"minisign" => Ok(Self::Minisign),
             blob => Err(anyhow!(
                 "Invalid tree signature algorithm {:?}",
                 String::from_utf8_lossy(blob)
             )),
         }
     }
-}
 
-impl TreeSignatureVersion {
-    /// Parse a [`TreeSignatureVersion`] from a git [`Blob`].
-    pub fn from_blob(blob: Blob<'_>) -> Result<Self> {
-        Err(anyhow!(
-            "Invalid tree signature version {:?}",
-            String::from_utf8_lossy(blob.content())
-        ))
-    }
-
-    /// Return the current version.
-    #[allow(dead_code)]
-    pub const fn current() -> Self {
-        TreeSignatureVersion::V0
+    /// Encode the algorithm as a string.
+    pub const fn as_str(&self) -> &str {
+        match self {
+            Self::Signify => "signify",
+            Self::Minisign => "minisign",
+        }
     }
 }
 
 /// A signature stored in a git tree object.
 pub struct TreeSignature<'repo> {
     /// Version of the tree signature.
-    #[allow(dead_code)]
     pub version: TreeSignatureVersion,
     /// Algorithm of the tree signature.
-    #[allow(dead_code)]
     pub algorithm: TreeSignatureAlgo,
     /// Pointer to the object that was signed.
-    pub object_pointer: Blob<'repo>,
+    pub object_pointer: Object<'repo>,
     /// The signature over the git object.
     pub signature: Blob<'repo>,
 }
@@ -153,15 +201,11 @@ impl<'repo> TreeSignature<'repo> {
             },
         )?;
 
-        let object = tree
+        let object_pointer = tree
             .get_name("object")
             .context("Failed to look-up signed object in the tree")?
             .to_object(repo)
             .context("The signed object could not be retrieved")?;
-        let object_pointer = match object.into_blob() {
-            Ok(ptr) => ptr,
-            Err(_) => return Err(anyhow!("The signed object is not a blob")),
-        };
 
         let signature = {
             let signature = tree
@@ -184,18 +228,79 @@ impl<'repo> TreeSignature<'repo> {
 
     /// Verify the authenticity of this [`TreeSignature`].
     pub fn verify(&self, public_key: &PublicKey) -> Result<()> {
-        match (&self.algorithm, public_key) {
-            (TreeSignatureAlgo::Signify, PublicKey::Signify(public_key)) => {
-                let signature = Signature::from_bytes(self.signature.content())
-                    .map_err(Error::new)
-                    .context("Failed to parse signify signature from git blob")?;
+        self.check_compatibility(public_key)
+            .context("Incompatible public key provided")?;
 
-                let dereferenced_obj = self.object_pointer.content();
+        match public_key {
+            PublicKey::Signify(public_key) => {
+                let signature = match &self.version {
+                    TreeSignatureVersion::V0 => {
+                        libsignify::Signature::from_bytes(self.signature.content())
+                            .map_err(Error::new)
+                            .context("Failed to parse signify signature from git blob")?
+                    }
+                    TreeSignatureVersion::V1 => {
+                        let signature_content = std::str::from_utf8(self.signature.content())
+                            .context("Found non-utf8 data in signify signature content")?;
+
+                        let (signature, _) = libsignify::Signature::from_base64(signature_content)
+                            .map_err(Error::new)
+                            .context("Failed to parse signify signature from git blob")?;
+
+                        signature
+                    }
+                };
+
+                let dereferenced_obj = self.dereference()?;
 
                 public_key
-                    .verify(dereferenced_obj, &signature)
+                    .verify(dereferenced_obj.as_bytes(), &signature)
                     .map_err(Error::new)
-                    .context("Failed to verify signature")
+                    .context("Invalid signify signature")
+            }
+            PublicKey::Minisign(public_key) => {
+                let signature_box = match &self.version {
+                    TreeSignatureVersion::V0 => {
+                        anyhow::bail!("minisign public keys not supported in v0");
+                    }
+                    TreeSignatureVersion::V1 => {
+                        let signature_content = std::str::from_utf8(self.signature.content())
+                            .context("Found non-utf8 data in minisign signature content")?;
+
+                        minisign::SignatureBox::from_string(signature_content)
+                            .context("Failed to parse minisign signature from git blob")?
+                    }
+                };
+
+                let dereferenced_obj = self.dereference()?;
+
+                minisign::verify(
+                    public_key,
+                    &signature_box,
+                    Cursor::new(dereferenced_obj.as_bytes()),
+                    true,
+                    false,
+                    false,
+                )
+                .context("Invalid minisign signature")
+            }
+        }
+    }
+
+    /// Check the compatibility of the given public key with this
+    /// tree signature.
+    pub fn check_compatibility(&self, key: &PublicKey) -> Result<()> {
+        match (&self.version, &self.algorithm, key) {
+            (TreeSignatureVersion::V0, TreeSignatureAlgo::Signify, PublicKey::Signify(_))
+            | (TreeSignatureVersion::V1, TreeSignatureAlgo::Signify, PublicKey::Signify(_))
+            | (TreeSignatureVersion::V1, TreeSignatureAlgo::Minisign, PublicKey::Minisign(_)) => {
+                Ok(())
+            }
+            _ => {
+                anyhow::bail!(
+                    "Attempted to validate signature with a public key of an incompatible \
+                    type"
+                );
             }
         }
     }
@@ -203,7 +308,17 @@ impl<'repo> TreeSignature<'repo> {
     /// Dereference the inner object pointer.
     #[inline]
     pub fn dereference(&self) -> Result<Oid> {
-        Oid::from_bytes(self.object_pointer.content()).context("Failed to parse git object id")
+        match &self.version {
+            TreeSignatureVersion::V0 => {
+                let blob = self
+                    .object_pointer
+                    .as_blob()
+                    .context("The signed object is not a blob")?;
+                let oid_bytes = blob.content();
+                Oid::from_bytes(oid_bytes).context("Failed to parse git object id from raw bytes")
+            }
+            TreeSignatureVersion::V1 => Ok(self.object_pointer.id()),
+        }
     }
 }
 
@@ -245,9 +360,7 @@ fn determine_key_format(key_data: &str) -> Result<TreeSignatureAlgo> {
 
     match rest {
         s if s.starts_with("signify") => Ok(TreeSignatureAlgo::Signify),
-        s if s.starts_with("minisign") => {
-            todo!("minisign keys aren't supported yet")
-        }
+        s if s.starts_with("minisign") => Ok(TreeSignatureAlgo::Minisign),
         _ => Err(anyhow!("Unknown key format")),
     }
 }
@@ -260,9 +373,19 @@ pub fn get_public_key(path: PathBuf) -> Result<PublicKey> {
         TreeSignatureAlgo::Signify => {
             let (public_key, _) = libsignify::PublicKey::from_base64(&key_data[..])
                 .map_err(Error::new)
-                .context("Failed to decode public key")?;
+                .context("Failed to decode signify public key")?;
 
             PublicKey::Signify(public_key)
+        }
+        TreeSignatureAlgo::Minisign => {
+            let public_key = minisign::PublicKeyBox::from_string(&key_data[..])
+                .context("Failed to read minisign public key")?;
+
+            PublicKey::Minisign(
+                public_key
+                    .into_public_key()
+                    .context("Failed to decode minisign public key")?,
+            )
         }
     })
 }
@@ -280,9 +403,7 @@ pub fn get_secret_key(path: PathBuf) -> Result<PrivateKey> {
                 .context("Failed to decode secret key")?;
 
             if secret_key.is_encrypted() {
-                let passphrase = rpassword::prompt_password("key passphrase: ")
-                    .map(Zeroizing::new)
-                    .context("Failed to read secret key password")?;
+                let passphrase = prompt_key_passphrase().map(Zeroizing::new)?;
 
                 secret_key
                     .decrypt_with_password(&passphrase)
@@ -292,7 +413,23 @@ pub fn get_secret_key(path: PathBuf) -> Result<PrivateKey> {
 
             PrivateKey::Signify(secret_key)
         }
+        TreeSignatureAlgo::Minisign => {
+            let private_key = minisign::SecretKeyBox::from_string(&key_data[..])
+                .context("Failed to read minisign secret key")?;
+
+            let passphrase = prompt_key_passphrase()?;
+
+            PrivateKey::Minisign(
+                private_key
+                    .into_secret_key(Some(passphrase))
+                    .context("Failed to decode minisign private key")?,
+            )
+        }
     })
+}
+
+fn prompt_key_passphrase() -> Result<String> {
+    rpassword::prompt_password("key passphrase: ").context("Failed to read secret key passphrase")
 }
 
 /// Try to find and open a git repository.

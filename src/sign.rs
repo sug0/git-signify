@@ -17,7 +17,7 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
         let tree_sig = utils::TreeSignature::load_oid(&repo, tree_oid)?;
         tree_sig.dereference()?
     };
-    let key_fingerprint = secret_key.public_key().fingerprint()?;
+    let key_fingerprint = secret_key.public_key()?.fingerprint()?;
     let reference = utils::craft_signature_reference(key_fingerprint, signed_object);
     repo.reference(
         &reference, tree_oid,

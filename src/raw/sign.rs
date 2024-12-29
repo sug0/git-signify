@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use git2::{Oid, Repository};
+use git2::{ObjectType, Oid, Repository};
 
 use crate::utils;
 
@@ -19,28 +19,47 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
 /// Sign the revision `rev` with the given secret key, write the results
 /// to `repo` and return the object id of the resulting signature tree.
 pub fn sign(repo: &Repository, secret_key: &utils::PrivateKey, rev: &str) -> Result<Oid> {
-    let oid = repo
+    let object = repo
         .revparse_single(rev)
-        .context("Failed to look-up git object id")?
-        .id();
+        .context("Failed to look-up git object id")?;
 
-    let object_blob = repo
-        .blob(oid.as_bytes())
-        .context("Failed to write object id to the git store")?;
+    let object_ptr = object.id();
+    let object_mode = match object
+        .kind()
+        .context("Failed to determine object kind to sign")?
+    {
+        ObjectType::Blob => 0o100644,
+        ObjectType::Tree => 0o040000,
+        ty @ (ObjectType::Any | ObjectType::Commit | ObjectType::Tag) => {
+            anyhow::bail!("Unsupported object type {ty}");
+        }
+    };
 
-    let signature = secret_key.sign(oid.as_bytes());
+    let signature = secret_key.sign(object_ptr.as_bytes())?;
     let signature_blob = repo
         .blob(&signature)
         .context("Failed to write signature to the object store")?;
+
+    let version_blob = repo
+        .blob(utils::TreeSignatureVersion::current().as_str().as_bytes())
+        .context("Failed to write tree signature version to the object store")?;
+
+    let algo_blob = repo
+        .blob(secret_key.algorithm().as_str().as_bytes())
+        .context("Failed to write tree signature algorithm to the object store")?;
 
     let mut tree_builder = repo
         .treebuilder(None)
         .context("Failed to get a git tree object builder")?;
 
-    // TODO: insert a tree entry containing the version of this program
-
     tree_builder
-        .insert("object", object_blob, 0o100644)
+        .insert("version", version_blob, 0o100644)
+        .context("Failed to write version to the tree")?;
+    tree_builder
+        .insert("algorithm", algo_blob, 0o100644)
+        .context("Failed to write algorithm to the tree")?;
+    tree_builder
+        .insert("object", object_ptr, object_mode)
         .context("Failed to write object to the tree")?;
     tree_builder
         .insert("signature", signature_blob, 0o100644)
