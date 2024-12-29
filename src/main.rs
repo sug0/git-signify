@@ -1,4 +1,5 @@
 mod fingerprint;
+mod list_signatures;
 mod pull;
 mod push;
 mod raw;
@@ -60,6 +61,8 @@ enum Action {
         /// The name of the remote repository
         remote: Option<Cow<'static, str>>,
     },
+    /// List signatures stored in this repository
+    ListSignatures,
 }
 
 #[derive(Subcommand)]
@@ -112,5 +115,6 @@ fn main() -> Result<()> {
         } => verify::command(public_key, rev),
         Action::Push { remote } => push::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
         Action::Pull { remote } => pull::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
+        Action::ListSignatures => list_signatures::command(),
     }
 }

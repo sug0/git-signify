@@ -511,3 +511,9 @@ pub fn craft_signature_reference(key_fingerprint: Oid, signed_object: Oid) -> St
 
 /// Git refspec describing all signify references.
 pub const ALL_SIGNIFY_REFS: &str = "refs/signify/*";
+
+/// Git refspec describing all signify signature references.
+pub const ALL_SIGNIFY_SIGNATURE_REFS: &str = "refs/signify/signatures/*";
+
+/// Git refspec prefix describing all signify signature references.
+pub const ALL_SIGNIFY_SIGNATURE_REFS_PREFIX: &str = "refs/signify/signatures/";
