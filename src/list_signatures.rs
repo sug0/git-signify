@@ -7,7 +7,7 @@ use git2::{Oid, Repository};
 
 use super::utils;
 
-/// List signatures stored in this repository.
+/// Execute the `list-signatures` command.
 pub fn command(output_json: bool) -> Result<()> {
     let repo = utils::open_repository()?;
 
