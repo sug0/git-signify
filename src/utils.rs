@@ -163,10 +163,5 @@ pub fn craft_signature_reference(key_fingerprint: Oid, signed_object: Oid) -> St
     format!("refs/signify/signatures/{key_fingerprint}/{signed_object}")
 }
 
-/// Craft a git reference to a public key.
-pub fn craft_pubkey_reference(key_fingerprint: Oid) -> String {
-    format!("refs/signify/pubkeys/{key_fingerprint}")
-}
-
 /// Git refspec describing all signify references.
 pub const ALL_SIGNIFY_REFS: &str = "refs/signify/*";
