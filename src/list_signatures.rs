@@ -32,16 +32,15 @@ pub fn command() -> Result<()> {
 
         println!("Signers of {signed_rev}:");
 
-        for (signer, revname) in &signers {
+        for signer in signers {
             println!("  - {signer}");
-            println!("    {revname}");
         }
     }
 
     Ok(())
 }
 
-fn find_signers(repo: &Repository) -> Result<BTreeMap<Oid, Vec<(Oid, String)>>> {
+fn find_signers(repo: &Repository) -> Result<BTreeMap<Oid, Vec<Oid>>> {
     let mut signers: BTreeMap<_, Vec<_>> = BTreeMap::new();
 
     for maybe_rev in repo
@@ -65,10 +64,7 @@ fn find_signers(repo: &Repository) -> Result<BTreeMap<Oid, Vec<(Oid, String)>>> 
         let signer = Oid::from_str(signer)
             .with_context(|| format!("Failed to parse git signer with oid={oid}"))?;
 
-        signers
-            .entry(oid)
-            .or_default()
-            .push((signer, revname.to_string()));
+        signers.entry(oid).or_default().push(signer);
     }
 
     Ok(signers)
