@@ -17,7 +17,7 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
             .revparse_single(&rev)
             .context("Failed to look-up git object")?
             .id();
-        let key_fingerprint = utils::hash_bytes(&public_key.key()[..])?;
+        let key_fingerprint = public_key.fingerprint()?;
         utils::craft_signature_reference(key_fingerprint, object_oid)
     };
     verify(&repo, &public_key, &tree_rev, false)?;

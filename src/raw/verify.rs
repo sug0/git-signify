@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use git2::{Oid, Repository};
-use libsignify::PublicKey;
 
 use crate::utils;
 
@@ -22,7 +21,7 @@ pub fn command(key_path: PathBuf, recover: bool, tree_rev: String) -> Result<()>
 /// Verify the signature under `tree_rev` with the given public key.
 pub fn verify(
     repo: &Repository,
-    public_key: &PublicKey,
+    public_key: &utils::PublicKey,
     tree_rev: &str,
     recover: bool,
 ) -> Result<Option<Oid>> {

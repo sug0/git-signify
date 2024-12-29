@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use git2::{Oid, Repository};
-use libsignify::{Codeable, PrivateKey};
 
 use crate::utils;
 
@@ -19,7 +18,7 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
 
 /// Sign the revision `rev` with the given secret key, write the results
 /// to `repo` and return the object id of the resulting signature tree.
-pub fn sign(repo: &Repository, secret_key: &PrivateKey, rev: &str) -> Result<Oid> {
+pub fn sign(repo: &Repository, secret_key: &utils::PrivateKey, rev: &str) -> Result<Oid> {
     let oid = repo
         .revparse_single(rev)
         .context("Failed to look-up git object id")?
@@ -29,7 +28,7 @@ pub fn sign(repo: &Repository, secret_key: &PrivateKey, rev: &str) -> Result<Oid
         .blob(oid.as_bytes())
         .context("Failed to write object id to the git store")?;
 
-    let signature = secret_key.sign(oid.as_bytes()).as_bytes();
+    let signature = secret_key.sign(oid.as_bytes());
     let signature_blob = repo
         .blob(&signature)
         .context("Failed to write signature to the object store")?;
