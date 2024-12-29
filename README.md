@@ -81,3 +81,7 @@ hash being signed over, if any. The resulting commit's hash is returned by
 Signatures end up in `refs/signify/signatures/${key_fingerprint}/${sig_hash}`,
 where `$key_fingerprint` can be computed by `git signify fingerprint`, and
 `$sig_hash` is a hash returned by `git signify raw sign`.
+
+### Why, we have GnuPG
+
+GPG sucks.
