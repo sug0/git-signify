@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.95"
 clap = { version = "4.5.23", features = ["derive", "env"] }
+clap_complete = "4.5.40"
 either = "1.13.0"
 git2 = "0.19.0"
 minisign = "0.7.9"

@@ -4,6 +4,7 @@ mod pull;
 mod push;
 mod raw;
 mod rev_lookup;
+mod shell_completions;
 mod sign;
 mod utils;
 mod verify;
@@ -77,6 +78,11 @@ enum Action {
         /// Revision whose signature will be looked up
         git_rev: String,
     },
+    /// Generate shell completions
+    ShellCompletions {
+        /// The shell to generate completions for
+        shell: clap_complete::aot::Shell,
+    },
 }
 
 #[derive(Subcommand)]
@@ -134,5 +140,6 @@ fn main() -> Result<()> {
             public_key,
             git_rev: rev,
         } => rev_lookup::command(public_key, rev),
+        Action::ShellCompletions { shell } => shell_completions::command(shell),
     }
 }
