@@ -3,6 +3,7 @@ mod list_signatures;
 mod pull;
 mod push;
 mod raw;
+mod rev_lookup;
 mod sign;
 mod utils;
 mod verify;
@@ -67,6 +68,15 @@ enum Action {
         #[arg(long)]
         json: bool,
     },
+    /// Look-up a signature revision
+    RevLookup {
+        /// Path to the base64 encoded public key that signed the rev
+        #[arg(short = 'k', long, env = "GIT_KEY_PUB")]
+        public_key: PathBuf,
+
+        /// Revision whose signature will be looked up
+        git_rev: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -120,5 +130,9 @@ fn main() -> Result<()> {
         Action::Push { remote } => push::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
         Action::Pull { remote } => pull::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
         Action::ListSignatures { json } => list_signatures::command(json),
+        Action::RevLookup {
+            public_key,
+            git_rev: rev,
+        } => rev_lookup::command(public_key, rev),
     }
 }
