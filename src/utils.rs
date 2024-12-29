@@ -9,8 +9,33 @@ use git2::{Blob, ObjectType, Oid, Repository, RepositoryOpenFlags};
 use libsignify::{Codeable, PrivateKey, PublicKey, Signature};
 use zeroize::Zeroizing;
 
+/// Enumeration of all possible formats of a [`TreeSignature`].
+pub enum TreeSignatureFormat {
+    /// Version 0 tree signatures.
+    V0,
+}
+
+impl TreeSignatureFormat {
+    /// Parse a [`TreeSignatureFormat`] from a git [`Blob`].
+    pub fn from_blob(blob: Blob<'_>) -> Result<Self> {
+        Err(anyhow!(
+            "Invalid tree signature format {:?}",
+            String::from_utf8_lossy(blob.content())
+        ))
+    }
+
+    /// Return the current format.
+    #[allow(dead_code)]
+    pub const fn current() -> Self {
+        TreeSignatureFormat::V0
+    }
+}
+
 /// A signature stored in a git tree object.
 pub struct TreeSignature<'repo> {
+    /// Format of the tree signature.
+    #[allow(dead_code)]
+    pub format: TreeSignatureFormat,
     /// Pointer to the object that was signed.
     pub object_pointer: Blob<'repo>,
     /// The signature over the git object.
@@ -35,6 +60,21 @@ impl<'repo> TreeSignature<'repo> {
         let tree = repo
             .find_tree(oid)
             .context("No tree object found for the given revision")?;
+
+        let format =
+            tree.get_name("format")
+                .map_or(Ok(TreeSignatureFormat::V0), |format_tree_entry| {
+                    let format_obj = format_tree_entry
+                        .to_object(repo)
+                        .context("The tree signature format could not be retrieved")?;
+                    let format_blob = match format_obj.into_blob() {
+                        Ok(ptr) => ptr,
+                        Err(_) => {
+                            return Err(anyhow!("The tree signature format object is not a blob"))
+                        }
+                    };
+                    TreeSignatureFormat::from_blob(format_blob)
+                })?;
 
         let object = tree
             .get_name("object")
@@ -61,6 +101,7 @@ impl<'repo> TreeSignature<'repo> {
         };
 
         Ok(Self {
+            format,
             signature,
             object_pointer,
         })
