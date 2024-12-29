@@ -4,8 +4,7 @@ A tool to sign arbitrary objects in a git repository.
 
 ## Generating keys
 
-Signing keys can be generated with [`signify`](https://man.openbsd.org/signify.1),
-from the OpenBSD project.
+Signing keys can be generated with [`signify`], from the OpenBSD project.
 
 ```
 $ signify -G -p newkey.pub -s newkey.sec
@@ -13,6 +12,19 @@ $ signify -G -p newkey.pub -s newkey.sec
 
 If you do not wish to encrypt your keys, pass the `-n` flag to the
 command line of `signify`.
+
+Alternatively, [`minisign`] keys may also be used. This project provides
+a more portable alternative to [`signify`].
+
+```
+$ minisign -G -p newkey.pub -s newkey.sec
+```
+
+`git-signify` always assumes that [`minisign`] keys are encrypted,
+albeit the CLI tool allows generating non-encrypted keys.
+
+[`signify`]: https://man.openbsd.org/signify.1
+[`minisign`]: https://github.com/jedisct1/minisign
 
 ## Basic usage
 
@@ -31,13 +43,14 @@ verify a release of `git-signify` itself:
 ```
 $ git pull --tags
 $ git signify pull
-$ git signify verify -k <(curl -sfL https://gandas.us.to/keys/git.pub) v0.3.0
+$ git signify verify -k <(curl -sfL https://gandas.us.to/keys/git.pub) v0.7.0
+$ git signify verify -k <(curl -sfL https://gandas.us.to/keys/git_minisign.pub) v0.7.0
 ```
 
 To sign git revisions, run something akin to:
 
 ```
-$ git signify sign -k <secret-key> v0.3.0
+$ git signify sign -k <secret-key> v0.7.0
 ```
 
 ## In-depth
@@ -48,37 +61,23 @@ $ git signify sign -k <secret-key> v0.3.0
 following blobs:
 
 ```
-100644 blob aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	object
+100644 blob aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	algorithm
 100644 blob bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb	signature
+100644 blob cccccccccccccccccccccccccccccccccccccccc	version
 ```
 
-Where `object` stores the raw (20 byte) object id of some git object
-to be signed, and `signature` stores the signature over `object`. The
-tree's hash is returned by `git signify raw sign`.
+Another git object `object` may be present in the tree, if a signature
+over a blob or another tree is being made. This `object` is a pointer
+to the respective git object being signed over. On the other hand,
+`signature` contains the base64 encoded `signify` or `minisign` signature
+over the raw (20 byte) id of `object`. The remaining blobs, `version` and
+`algorithm`, represent the current version of the `git-signify` tree format
+and the algorithm (`minisign` or `signify`) being used, respectively.
 
-### Storing signatures in tags
+The tree is then committed along with a potential parent, which is the commit
+hash being signed over, if any. The resulting commit's hash is returned by
+`git signify raw sign`.
 
-To store signatures in tags, one must use the "raw" mode of `git-signify`.
-The raw flags supported by this program and their respective documentation
-can be checked by running the following commands:
-
-```
-$ git signify raw -h
-$ git signify raw sign -h
-$ git signify raw verify -h
-```
-
-The suggested approach to store signatures in tags is the following:
-
-```
-$ SIGNATURE_TREE=$(git signify raw sign -k $SECRET_KEY $OBJECT_TO_SIGN)
-$ SIGNATURE_COMMIT=$(git commit-tree $SIGNATURE_TREE -m Signature)
-$ git tag signature-$OBJECT_TO_SIGN $SIGNATURE_COMMIT
-$ git push --tags
-```
-
-Verification can then be done with:
-
-```
-$ git signify raw verify -p -k $PUBLIC_KEY $SIGNATURE_COMMIT^{tree}
-```
+Signatures end up in `refs/signify/signatures/${key_fingerprint}/${sig_hash}`,
+where `$key_fingerprint` can be computed by `git signify fingerprint`, and
+`$sig_hash` is a hash returned by `git signify raw sign`.
