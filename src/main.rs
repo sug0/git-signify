@@ -62,7 +62,11 @@ enum Action {
         remote: Option<Cow<'static, str>>,
     },
     /// List signatures stored in this repository
-    ListSignatures,
+    ListSignatures {
+        /// Output JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -115,6 +119,6 @@ fn main() -> Result<()> {
         } => verify::command(public_key, rev),
         Action::Push { remote } => push::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
         Action::Pull { remote } => pull::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
-        Action::ListSignatures => list_signatures::command(),
+        Action::ListSignatures { json } => list_signatures::command(json),
     }
 }
