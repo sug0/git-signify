@@ -182,7 +182,7 @@ impl<'repo> TreeSignature<'repo> {
     }
 
     /// Load a v0 [`TreeSignature`].
-    pub fn load_oid_v0(repo: &'repo Repository, object: Object<'repo>) -> Result<Self> {
+    fn load_oid_v0(repo: &'repo Repository, object: Object<'repo>) -> Result<Self> {
         let tree = object.as_tree().with_context(|| {
             format!(
                 "No tree signature found for object with oid={}",
@@ -215,7 +215,7 @@ impl<'repo> TreeSignature<'repo> {
     }
 
     /// Load a v1 [`TreeSignature`].
-    pub fn load_oid_v1(repo: &'repo Repository, object: Object<'repo>) -> Result<Self> {
+    fn load_oid_v1(repo: &'repo Repository, object: Object<'repo>) -> Result<Self> {
         let commit = object
             .as_commit()
             .context("Failed to retrieve v1 git commit with signature")?;
