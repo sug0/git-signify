@@ -30,13 +30,13 @@ enum Action {
     /// Hash a key and return it
     Fingerprint {
         /// The path to the base64 encoded key to hash
-        #[arg(short = 'k', long)]
+        #[arg(short = 'k', long, env = "GIT_KEY_PUB")]
         key: PathBuf,
     },
     /// Sign an arbitrary object
     Sign {
         /// The path to the base64 encoded secret key to sign with
-        #[arg(short = 'k', long)]
+        #[arg(short = 'k', long, env = "GIT_KEY_SEC")]
         secret_key: PathBuf,
 
         /// The git revision to sign
@@ -45,7 +45,7 @@ enum Action {
     /// Verify the signature over some git revision
     Verify {
         /// The path to the base64 encoded public key to verify with
-        #[arg(short = 'k', long)]
+        #[arg(short = 'k', long, env = "GIT_KEY_PUB")]
         public_key: PathBuf,
 
         /// The signed git revision to verify
@@ -64,7 +64,7 @@ enum Action {
     /// Store a reference to a public key
     Store {
         /// The path to the base64 encoded public key to store
-        #[arg(short = 'k', long)]
+        #[arg(short = 'k', long, env = "GIT_KEY_PUB")]
         key: PathBuf,
     },
 }
@@ -74,7 +74,7 @@ enum RawAction {
     /// Sign an arbitrary object and return a tree with the signature
     Sign {
         /// The path to the base64 encoded secret key to sign with
-        #[arg(short = 'k', long)]
+        #[arg(short = 'k', long, env = "GIT_KEY_SEC")]
         secret_key: PathBuf,
 
         /// The git revision to sign
@@ -83,7 +83,7 @@ enum RawAction {
     /// Verify the signature contained in a tree object
     Verify {
         /// The path to the base64 encoded public key to verify with
-        #[arg(short = 'k', long)]
+        #[arg(short = 'k', long, env = "GIT_KEY_PUB")]
         public_key: PathBuf,
 
         /// Print the id of the signed object to stdout
