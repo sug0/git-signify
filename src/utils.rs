@@ -175,8 +175,8 @@ impl<'repo> TreeSignature<'repo> {
         match object.kind().context(
             "Failed to determine kind of git object, while determining version of the signature",
         )? {
-            ObjectType::Tree => Self::load_oid_v0(repo, object),
-            ObjectType::Commit => Self::load_oid_v1(repo, object),
+            ObjectType::Tree => Self::load_obj_v0(repo, object),
+            ObjectType::Commit => Self::load_obj_v1_or_greater(repo, object),
             _ => anyhow::bail!(
                 "Invalid object kind provided, while loading tree signature with oid={oid}"
             ),
@@ -184,7 +184,7 @@ impl<'repo> TreeSignature<'repo> {
     }
 
     /// Load a v0 [`TreeSignature`].
-    fn load_oid_v0(repo: &'repo Repository, object: Object<'repo>) -> Result<Self> {
+    fn load_obj_v0(repo: &'repo Repository, object: Object<'repo>) -> Result<Self> {
         let tree = object.as_tree().with_context(|| {
             format!(
                 "No tree signature found for object with oid={}",
@@ -217,7 +217,7 @@ impl<'repo> TreeSignature<'repo> {
     }
 
     /// Load a v1 [`TreeSignature`].
-    fn load_oid_v1(repo: &'repo Repository, object: Object<'repo>) -> Result<Self> {
+    fn load_obj_v1_or_greater(repo: &'repo Repository, object: Object<'repo>) -> Result<Self> {
         let commit = object
             .as_commit()
             .context("Failed to retrieve v1 git commit with signature")?;
