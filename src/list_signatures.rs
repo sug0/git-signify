@@ -63,9 +63,9 @@ fn output_signers_json(repo: &Repository) -> Result<()> {
 }
 
 fn describe_object(repo: &Repository, oid: Oid) -> Result<String> {
-    let object = repo
-        .find_object(oid, None)
-        .context("Failed to find signed object")?;
+    let Ok(object) = repo.find_object(oid, None) else {
+        return Ok(oid.to_string());
+    };
 
     let opts = {
         let mut opts = git2::DescribeOptions::new();
