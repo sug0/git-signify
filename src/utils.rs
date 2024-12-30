@@ -1,9 +1,11 @@
 //! Catch-all utilities module.
 
+use std::collections::BTreeMap;
 use std::error;
 use std::fmt;
+use std::fs;
 use std::io::Cursor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use git2::{Blob, Object, ObjectType, Oid, Repository, RepositoryOpenFlags};
@@ -426,8 +428,47 @@ fn determine_key_format(key_data: &str) -> Result<TreeSignatureAlgo> {
     }
 }
 
+/// Read all keys under the given `path` with `read`.
+fn read_key_entries<F, T>(ext: &str, path: PathBuf, mut read: F) -> Result<BTreeMap<PathBuf, T>>
+where
+    F: FnMut(&Path) -> Result<T>,
+{
+    let mut keys = BTreeMap::new();
+
+    for maybe_ent in fs::read_dir(path)
+        .with_context(|| format!("Failed to query entries in {ext} key directory"))?
+    {
+        let ent =
+            maybe_ent.with_context(|| format!("Failed to read entry in {ext} key directory"))?;
+        let path = ent.path();
+
+        if matches!(path.extension().and_then(|p| p.to_str()), Some(e) if e == ext) {
+            let key = read(&path)?;
+            keys.insert(path, key);
+        }
+    }
+
+    Ok(keys)
+}
+
+/// Read public keys from the given path. If a directory is provided,
+/// keys are read from files whose extension is `.pub`.
+pub fn get_public_keys(path: PathBuf) -> Result<BTreeMap<PathBuf, PublicKey>> {
+    let meta = fs::metadata(&path).context("Failed to query public key path metadata")?;
+
+    if meta.is_dir() {
+        read_key_entries("pub", path, get_public_key)
+    } else {
+        get_public_key(&path).map(|key| {
+            let mut map = BTreeMap::new();
+            map.insert(path, key);
+            map
+        })
+    }
+}
+
 /// Read a public key from the given path.
-pub fn get_public_key(path: PathBuf) -> Result<PublicKey> {
+fn get_public_key(path: &Path) -> Result<PublicKey> {
     let key_data = std::fs::read_to_string(path).context("Failed to read public key")?;
 
     Ok(match determine_key_format(&key_data)? {
@@ -451,8 +492,24 @@ pub fn get_public_key(path: PathBuf) -> Result<PublicKey> {
     })
 }
 
+/// Read secret keys from the given path. If a directory is provided,
+/// keys are read from files whose extension is `.sec`.
+pub fn get_secret_keys(path: PathBuf) -> Result<BTreeMap<PathBuf, PrivateKey>> {
+    let meta = fs::metadata(&path).context("Failed to query secret key path metadata")?;
+
+    if meta.is_dir() {
+        read_key_entries("sec", path, get_secret_key)
+    } else {
+        get_secret_key(&path).map(|key| {
+            let mut map = BTreeMap::new();
+            map.insert(path, key);
+            map
+        })
+    }
+}
+
 /// Read a secret key from the given path.
-pub fn get_secret_key(path: PathBuf) -> Result<PrivateKey> {
+fn get_secret_key(path: &Path) -> Result<PrivateKey> {
     let key_data = std::fs::read_to_string(path)
         .map(Zeroizing::new)
         .context("Failed to read secret key")?;
