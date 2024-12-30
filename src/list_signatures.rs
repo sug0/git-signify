@@ -3,23 +3,54 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
-use git2::{Oid, Repository};
+use git2::{Direction, Oid, ProxyOptions, Remote, Repository};
 
 use super::utils;
 
 /// Execute the `list-signatures` command.
-pub fn command(output_json: bool) -> Result<()> {
+pub fn command(output_json: bool, remote: Option<String>) -> Result<()> {
     let repo = utils::open_repository()?;
 
-    if !output_json {
-        output_signers_human(&repo)
+    if let Some(remote_name) = remote {
+        let mut remote = repo
+            .find_remote(&remote_name)
+            .context("Unable to find remote")?;
+
+        let proxy_options = {
+            let mut opts = ProxyOptions::new();
+            opts.auto();
+            opts
+        };
+
+        remote
+            .connect_auth(Direction::Fetch, None, Some(proxy_options))
+            .with_context(|| {
+                format!(
+                    "Failed to connect to remote {remote_name}, only \
+                     remotes with no authentication are supported",
+                )
+            })?;
+
+        command_inner(&repo, output_json, &remote)
     } else {
-        output_signers_json(&repo)
+        command_inner(&repo, output_json, &repo)
     }
 }
 
-fn output_signers_human(repo: &Repository) -> Result<()> {
-    for (oid, signers) in find_signers(repo)? {
+fn command_inner<'repo, F: FindSigners + ?Sized>(
+    repo: &'repo Repository,
+    output_json: bool,
+    find_signers: &'repo F,
+) -> Result<()> {
+    if !output_json {
+        output_signers_human(repo, find_signers)
+    } else {
+        output_signers_json(repo, find_signers)
+    }
+}
+
+fn output_signers_human<F: FindSigners + ?Sized>(repo: &Repository, f: &F) -> Result<()> {
+    for (oid, signers) in f.find_signers()? {
         let signed_rev = describe_object(repo, oid)?;
         println!("Signers of {signed_rev}:");
 
@@ -30,7 +61,7 @@ fn output_signers_human(repo: &Repository) -> Result<()> {
     Ok(())
 }
 
-fn output_signers_json(repo: &Repository) -> Result<()> {
+fn output_signers_json<F: FindSigners + ?Sized>(repo: &Repository, f: &F) -> Result<()> {
     fn print_signers(signers: Vec<Oid>) {
         let mut signers_iter = signers.into_iter();
 
@@ -44,7 +75,7 @@ fn output_signers_json(repo: &Repository) -> Result<()> {
         print!("]");
     }
 
-    let mut objs_iter = find_signers(repo)?.into_iter();
+    let mut objs_iter = f.find_signers()?.into_iter();
 
     print!("{{");
     if let Some((oid, signers)) = objs_iter.next() {
@@ -83,32 +114,57 @@ fn describe_object(repo: &Repository, oid: Oid) -> Result<String> {
         .with_context(|| format!("Failed to format description of oid={oid}"))
 }
 
-fn find_signers(repo: &Repository) -> Result<BTreeMap<Oid, Vec<Oid>>> {
-    let mut signers: BTreeMap<_, Vec<_>> = BTreeMap::new();
+trait FindSigners {
+    fn find_signers(&self) -> Result<BTreeMap<Oid, Vec<Oid>>>;
+}
 
-    for maybe_rev in repo
-        .references_glob(utils::ALL_SIGNIFY_SIGNATURE_REFS)
-        .context("Failed to look-up all git-signify signature refs")?
-    {
-        let rev = maybe_rev.context("Failed to parse git revision")?;
-        let revname = rev.name().context("Invalid revision name")?;
+impl FindSigners for Repository {
+    fn find_signers(&self) -> Result<BTreeMap<Oid, Vec<Oid>>> {
+        let mut signers: BTreeMap<_, Vec<_>> = BTreeMap::new();
 
-        let Some(("", signer_and_oid)) =
-            revname.split_once(utils::ALL_SIGNIFY_SIGNATURE_REFS_PREFIX)
-        else {
-            continue;
-        };
-        let Some((signer, oid)) = signer_and_oid.split_once('/') else {
-            continue;
-        };
+        for maybe_rev in self
+            .references_glob(utils::ALL_SIGNIFY_SIGNATURE_REFS)
+            .context("Failed to look-up all git-signify signature refs")?
+        {
+            let rev = maybe_rev.context("Failed to parse git revision")?;
+            let revname = rev.name().context("Invalid revision name")?;
 
-        let oid = Oid::from_str(oid)
-            .with_context(|| format!("Failed to parse git oid={oid} of signed obj"))?;
-        let signer = Oid::from_str(signer)
-            .with_context(|| format!("Failed to parse git signer with oid={oid}"))?;
+            let Some((oid, signer)) = parse_signature_oid_and_signer(revname) else {
+                continue;
+            };
 
-        signers.entry(oid).or_default().push(signer);
+            signers.entry(oid).or_default().push(signer);
+        }
+
+        Ok(signers)
     }
+}
 
-    Ok(signers)
+impl FindSigners for Remote<'_> {
+    fn find_signers(&self) -> Result<BTreeMap<Oid, Vec<Oid>>> {
+        let mut signers: BTreeMap<_, Vec<_>> = BTreeMap::new();
+
+        for (oid, signer) in self
+            .list()
+            .context("Failed to look-up remote refs")?
+            .iter()
+            .filter_map(|head| parse_signature_oid_and_signer(head.name()))
+        {
+            signers.entry(oid).or_default().push(signer);
+        }
+
+        Ok(signers)
+    }
+}
+
+fn parse_signature_oid_and_signer(revname: &str) -> Option<(Oid, Oid)> {
+    let ("", signer_and_oid) = revname.split_once(utils::ALL_SIGNIFY_SIGNATURE_REFS_PREFIX)? else {
+        return None;
+    };
+    let (signer, oid) = signer_and_oid.split_once('/')?;
+
+    let oid = Oid::from_str(oid).ok()?;
+    let signer = Oid::from_str(signer).ok()?;
+
+    Some((oid, signer))
 }

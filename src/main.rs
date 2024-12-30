@@ -72,6 +72,11 @@ enum Action {
         /// Output JSON
         #[arg(long)]
         json: bool,
+
+        /// The name of the remote repository, to
+        /// list remote signatures
+        #[arg(short = 'R', long)]
+        remote: Option<String>,
     },
     /// Look-up a signature revision
     RevLookup {
@@ -162,7 +167,7 @@ fn main() -> Result<()> {
         } => verify::command(public_key, rev),
         Action::Push { remote } => push::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
         Action::Pull { remote } => pull::command(&remote.unwrap_or(Cow::Borrowed("origin"))),
-        Action::ListSignatures { json } => list_signatures::command(json),
+        Action::ListSignatures { json, remote } => list_signatures::command(json, remote),
         Action::RevLookup {
             public_key,
             git_rev: rev,
