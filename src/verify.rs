@@ -20,8 +20,11 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
             let key_fingerprint = public_key.fingerprint()?;
             utils::craft_signature_reference(key_fingerprint, object_oid)
         };
-        verify(&repo, &public_key, &tree_rev, false)?;
-        println!("Signature verified successfully with {}", path.display());
+        if verify(&repo, &public_key, &tree_rev, false)?.is_right() {
+            println!("Signature verified successfully with {}", path.display());
+        } else {
+            println!("No signature found for key {}", path.display());
+        }
     }
     Ok(())
 }
