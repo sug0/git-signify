@@ -19,9 +19,9 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
             let key_fingerprint = public_key.fingerprint()?;
             utils::craft_signature_reference(key_fingerprint, object_oid)
         };
-        repo.revparse_single(&tree_rev)
-            .with_context(|| format!("No signature found for {rev}"))?;
-        println!("{tree_rev}");
+        if utils::revparse_single_ok_or_else(&repo, &tree_rev, |_| Ok(true), || Ok(false))? {
+            println!("{tree_rev}");
+        }
     }
     Ok(())
 }
