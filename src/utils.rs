@@ -153,17 +153,38 @@ pub struct TreeSignature<'repo> {
     pub signature: Blob<'repo>,
 }
 
+/// Parse a revision `rev`, and dispatch between `ok_` or `else_`, in case it is
+/// found (or not).
+pub fn revparse_single_ok_or_else<'repo, OK, ELSE, T>(
+    repo: &'repo Repository,
+    rev: &str,
+    ok_: OK,
+    else_: ELSE,
+) -> Result<T>
+where
+    OK: FnOnce(Object<'repo>) -> Result<T>,
+    ELSE: FnOnce() -> Result<T>,
+{
+    match repo.revparse_single(rev) {
+        Ok(obj) => ok_(obj),
+        Err(e) if e.code() == ErrorCode::NotFound => else_(),
+        Err(e) => Err(e).context("Failed to look-up revision"),
+    }
+}
+
 impl<'repo> TreeSignature<'repo> {
     /// Load a [`TreeSignature`] at the given `tree_rev` from the
     /// provided git repository. The value of `tree_rev` is expected
     /// to follow the refspec [`ALL_SIGNIFY_SIGNATURE_REFS`].
     #[inline]
     pub fn load(repo: &'repo Repository, tree_rev: &str) -> Result<Option<Self>> {
-        match repo.revparse_single(tree_rev) {
-            Ok(obj) => Self::load_oid(repo, obj.id()).map(Some),
-            Err(e) if e.code() == ErrorCode::NotFound => Ok(None),
-            Err(e) => Err(e).context("Failed to look-up tree signature"),
-        }
+        revparse_single_ok_or_else(
+            repo,
+            tree_rev,
+            |obj| Self::load_oid(repo, obj.id()).map(Some),
+            || Ok(None),
+        )
+        .context("Failed to look-up tree signature")
     }
 
     /// Like [`TreeSignature::load`], but uses a concrete revision pointing
