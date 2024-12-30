@@ -7,7 +7,7 @@ use git2::{Oid, Repository};
 
 use crate::utils;
 
-/// Execute the `verify` command.
+/// Execute the `raw verify` command.
 pub fn command(key_path: PathBuf, recover: bool, tree_rev: String) -> Result<()> {
     let repo = utils::open_repository()?;
     for public_key in utils::get_public_keys(key_path)?.into_values() {

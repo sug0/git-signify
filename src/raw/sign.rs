@@ -8,7 +8,7 @@ use git2::{ObjectType, Oid, Repository};
 
 use crate::utils;
 
-/// Execute the `sign` command.
+/// Execute the `raw sign` command.
 pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
     let repo = utils::open_repository()?;
     for secret_key in utils::get_secret_keys(key_path)?.into_values() {
