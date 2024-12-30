@@ -21,9 +21,10 @@ pub fn command(key_path: PathBuf, rev: String) -> Result<()> {
         let reference = utils::craft_signature_reference(key_fingerprint, signed_object);
         repo.reference(
             &reference, tree_oid,
-            // references to signatures will never change, so it is
-            // safe to force overwriting faulty references
-            true, "",
+            // references to signatures are non-deterministic,
+            // so we should fail if we attempt to overwrite a
+            // signature in our local git repository
+            false, "",
         )
         .context("Failed to store reference to signature")?;
         println!("Signed with key:");
