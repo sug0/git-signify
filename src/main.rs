@@ -4,6 +4,7 @@ mod pull;
 mod push;
 mod raw;
 mod rev_lookup;
+mod rm;
 mod shell_completions;
 mod sign;
 mod utils;
@@ -29,6 +30,9 @@ enum Action {
     /// Primitive signing and verification commands
     #[command(subcommand)]
     Raw(RawAction),
+    /// Remove git-signify data
+    #[command(subcommand)]
+    Rm(RmAction),
     /// Hash a key and return it
     Fingerprint {
         /// The path to the base64 encoded key to hash
@@ -111,6 +115,24 @@ enum RawAction {
     },
 }
 
+#[derive(Subcommand)]
+enum RmAction {
+    /// Remove git-signify signatures
+    Signature {
+        /// The path to the base64 encoded public key of the signer
+        #[arg(short = 'k', long, env = "GIT_KEY_PUB")]
+        public_key: PathBuf,
+
+        /// The name of the remote repository, in case
+        /// we wish to remove a remote signature
+        #[arg(short = 'R', long)]
+        remote: Option<String>,
+
+        /// The git revision whose signature we wish to remove
+        git_rev: String,
+    },
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -124,6 +146,11 @@ fn main() -> Result<()> {
             print_signed_oid: recover,
             git_tree: rev,
         }) => raw::verify::command(public_key, recover, rev),
+        Action::Rm(RmAction::Signature {
+            public_key,
+            git_rev,
+            remote,
+        }) => rm::signature::command(public_key, git_rev, remote),
         Action::Fingerprint { key } => fingerprint::command(key),
         Action::Sign {
             secret_key,
