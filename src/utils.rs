@@ -522,7 +522,7 @@ fn get_secret_key(path: &Path) -> Result<PrivateKey> {
                 .context("Failed to decode secret key")?;
 
             if secret_key.is_encrypted() {
-                let passphrase = prompt_key_passphrase().map(Zeroizing::new)?;
+                let passphrase = prompt_key_passphrase(path).map(Zeroizing::new)?;
 
                 secret_key
                     .decrypt_with_password(&passphrase)
@@ -536,7 +536,7 @@ fn get_secret_key(path: &Path) -> Result<PrivateKey> {
             let private_key = minisign::SecretKeyBox::from_string(&key_data[..])
                 .context("Failed to read minisign secret key")?;
 
-            let passphrase = prompt_key_passphrase()?;
+            let passphrase = prompt_key_passphrase(path)?;
 
             PrivateKey::Minisign(
                 private_key
@@ -547,8 +547,9 @@ fn get_secret_key(path: &Path) -> Result<PrivateKey> {
     })
 }
 
-fn prompt_key_passphrase() -> Result<String> {
-    rpassword::prompt_password("key passphrase: ").context("Failed to read secret key passphrase")
+fn prompt_key_passphrase(path: &Path) -> Result<String> {
+    rpassword::prompt_password(format!("{} passphrase: ", path.display()))
+        .context("Failed to read secret key passphrase")
 }
 
 /// Try to find and open a git repository.
