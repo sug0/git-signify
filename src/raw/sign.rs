@@ -3,7 +3,6 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use either::*;
 use git2::{ObjectType, Oid, Repository};
 
 use crate::utils;
@@ -26,15 +25,15 @@ pub fn sign(repo: &Repository, secret_key: &utils::PrivateKey, rev: &str) -> Res
         .context("Failed to look-up git object id")?;
 
     let object_ptr = object.id();
-    let object_mode_or_commit = match object
+    let object_mode = match object
         .kind()
         .context("Failed to determine object kind to sign")?
     {
-        ObjectType::Blob => Left(0o100644),
-        ObjectType::Tree => Left(0o040000),
-        ObjectType::Commit => Right(object.as_commit().expect("The object is a commit")),
-        ty @ (ObjectType::Any | ObjectType::Tag) => {
-            anyhow::bail!("Unsupported or recursive object type {ty}");
+        ObjectType::Blob => 0o100644,
+        ObjectType::Tree => 0o040000,
+        ObjectType::Commit | ObjectType::Tag => 0o160000,
+        ty @ ObjectType::Any => {
+            anyhow::bail!("Unsupported object type {ty}");
         }
     };
 
@@ -68,16 +67,9 @@ pub fn sign(repo: &Repository, secret_key: &utils::PrivateKey, rev: &str) -> Res
     tree_builder
         .insert("signature", signature_blob, 0o100644)
         .context("Failed to write signature to the tree")?;
-
-    let parents = object_mode_or_commit.either(
-        |object_mode| {
-            tree_builder
-                .insert("object", object_ptr, object_mode)
-                .context("Failed to write object to the tree")?;
-            anyhow::Ok(vec![])
-        },
-        |commit| anyhow::Ok(vec![commit]),
-    )?;
+    tree_builder
+        .insert("object", object_ptr, object_mode)
+        .context("Failed to write object to the tree")?;
 
     let tree_oid = tree_builder
         .write()
@@ -93,7 +85,7 @@ pub fn sign(repo: &Repository, secret_key: &utils::PrivateKey, rev: &str) -> Res
             &commit_author,
             &format!("git-signify signature over {rev}"),
             &tree,
-            &parents,
+            &[],
         )
         .context("Failed to create git signature commit")?;
 

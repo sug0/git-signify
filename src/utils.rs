@@ -82,6 +82,8 @@ pub enum TreeSignatureVersion {
     V0,
     /// Version 1 tree signatures.
     V1,
+    /// Version 2 tree signatures.
+    V2,
 }
 
 impl TreeSignatureVersion {
@@ -90,6 +92,7 @@ impl TreeSignatureVersion {
         match blob.content() {
             b"v0" => Ok(Self::V0),
             b"v1" => Ok(Self::V1),
+            b"v2" => Ok(Self::V2),
             blob => Err(anyhow!(
                 "Invalid tree signature version {:?}",
                 String::from_utf8_lossy(blob)
@@ -99,7 +102,7 @@ impl TreeSignatureVersion {
 
     /// Return the current version.
     pub const fn current() -> Self {
-        TreeSignatureVersion::V1
+        TreeSignatureVersion::V2
     }
 
     /// Encode the version as a string.
@@ -107,6 +110,7 @@ impl TreeSignatureVersion {
         match self {
             Self::V0 => "v0",
             Self::V1 => "v1",
+            Self::V2 => "v2",
         }
     }
 }
@@ -273,14 +277,20 @@ impl<'repo> TreeSignature<'repo> {
         };
 
         let object_pointer = tree.get_name("object").map_or_else(
-            || {
-                Ok(commit
+            || match &version {
+                TreeSignatureVersion::V0 => {
+                    anyhow::bail!("Attempted to parse v0 tree signature from commit object")
+                }
+                TreeSignatureVersion::V1 => Ok(commit
                     .parent(0)
                     .context(
                         "No signed `object` in the tree signature nor a parent commit \
-                             to be signed could be found",
+                                 to be signed could be found",
                     )?
-                    .into_object())
+                    .into_object()),
+                TreeSignatureVersion::V2 => {
+                    anyhow::bail!("No signed `object` could be found in the tree signature");
+                }
             },
             |entry| {
                 entry.to_object(repo).with_context(|| {
@@ -324,7 +334,7 @@ impl<'repo> TreeSignature<'repo> {
                             .map_err(Error::new)
                             .context("Failed to parse signify signature from git blob")?
                     }
-                    TreeSignatureVersion::V1 => {
+                    TreeSignatureVersion::V1 | TreeSignatureVersion::V2 => {
                         let signature_content = std::str::from_utf8(self.signature.content())
                             .context("Found non-utf8 data in signify signature content")?;
 
@@ -348,7 +358,7 @@ impl<'repo> TreeSignature<'repo> {
                     TreeSignatureVersion::V0 => {
                         anyhow::bail!("minisign public keys not supported in v0");
                     }
-                    TreeSignatureVersion::V1 => {
+                    TreeSignatureVersion::V1 | TreeSignatureVersion::V2 => {
                         let signature_content = std::str::from_utf8(self.signature.content())
                             .context("Found non-utf8 data in minisign signature content")?;
 
@@ -378,7 +388,9 @@ impl<'repo> TreeSignature<'repo> {
         match (&self.version, &self.algorithm, key) {
             (TreeSignatureVersion::V0, TreeSignatureAlgo::Signify, PublicKey::Signify(_))
             | (TreeSignatureVersion::V1, TreeSignatureAlgo::Signify, PublicKey::Signify(_))
-            | (TreeSignatureVersion::V1, TreeSignatureAlgo::Minisign, PublicKey::Minisign(_)) => {
+            | (TreeSignatureVersion::V1, TreeSignatureAlgo::Minisign, PublicKey::Minisign(_))
+            | (TreeSignatureVersion::V2, TreeSignatureAlgo::Signify, PublicKey::Signify(_))
+            | (TreeSignatureVersion::V2, TreeSignatureAlgo::Minisign, PublicKey::Minisign(_)) => {
                 Ok(())
             }
             _ => {
@@ -402,7 +414,7 @@ impl<'repo> TreeSignature<'repo> {
                 let oid_bytes = blob.content();
                 Oid::from_bytes(oid_bytes).context("Failed to parse git object id from raw bytes")
             }
-            TreeSignatureVersion::V1 => Ok(self.object_pointer.id()),
+            TreeSignatureVersion::V1 | TreeSignatureVersion::V2 => Ok(self.object_pointer.id()),
         }
     }
 }
