@@ -64,15 +64,16 @@ following blobs:
 100644 blob aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	algorithm
 100644 blob bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb	signature
 100644 blob cccccccccccccccccccccccccccccccccccccccc	version
+?????? ???? dddddddddddddddddddddddddddddddddddddddd	object
 ```
 
-Another git object `object` may be present in the tree, if a signature
-over a blob or another tree is being made. This `object` is a pointer
-to the respective git object being signed over. On the other hand,
-`signature` contains the base64 encoded `signify` or `minisign` signature
-over the raw (20 byte) id of `object`. The remaining blobs, `version` and
-`algorithm`, represent the current version of the `git-signify` tree format
-and the algorithm (`minisign` or `signify`) being used, respectively.
+The entry `object` is a pointer to the respective git object being
+signed over, which typically assumes the form of a commit object.
+On the other hand, `signature` contains the base64 encoded `signify` or
+`minisign` signature over the raw (20 byte) id of `object`. The remaining
+blobs, `version` and `algorithm`, represent the current version of the
+`git-signify` tree format and the algorithm (`minisign` or `signify`)
+being used, respectively.
 
 The tree is then committed along with a potential parent, which is the commit
 hash being signed over, if any. The resulting commit's hash is returned by
