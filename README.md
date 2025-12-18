@@ -69,9 +69,9 @@ following blobs:
 
 The entry `object` is a pointer to the respective git object being
 signed over, which typically assumes the form of a commit object.
-On the other hand, `signature` contains the base64 encoded `signify` or
-`minisign` signature over the raw (20 byte) id of `object`. The remaining
-blobs, `version` and `algorithm`, represent the current version of the
+Then, `signature` contains the base64 encoded `signify` or `minisign`
+signature over the raw (20 byte) id of `object`. The remaining blobs,
+`version` and `algorithm`, represent the current version of the
 `git-signify` tree format and the algorithm (`minisign` or `signify`)
 being used, respectively.
 
