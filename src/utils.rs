@@ -90,7 +90,6 @@ impl TreeSignatureVersion {
     /// Parse a [`TreeSignatureVersion`] from a git [`Blob`].
     pub fn from_blob(blob: Blob<'_>) -> Result<Self> {
         match blob.content() {
-            b"v0" => Ok(Self::V0),
             b"v1" => Ok(Self::V1),
             b"v2" => Ok(Self::V2),
             blob => Err(anyhow!(
