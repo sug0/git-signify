@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 use git2::{Blob, ErrorCode, Object, ObjectType, Oid, Repository, RepositoryOpenFlags};
 use libsignify::Codeable;
+use ml_signify::codec::{codecs, Decode as _, Encode as _};
 use zeroize::Zeroizing;
 
 /// Private key used to sign git objects.
@@ -18,6 +19,8 @@ pub enum PrivateKey {
     Signify(libsignify::PrivateKey),
     /// Private key originating from [`minisign`].
     Minisign(minisign::SecretKey),
+    /// Private key originating from [`ml_signify`].
+    MlSignify(Box<ml_signify::SigningKey>),
 }
 
 impl PrivateKey {
@@ -29,6 +32,9 @@ impl PrivateKey {
                 minisign::PublicKey::from_secret_key(private_key)
                     .context("Failed to convert minisign private key to public key")?,
             )),
+            Self::MlSignify(private_key) => {
+                Ok(PublicKey::MlSignify(Box::new(private_key.verifying_key())))
+            }
         }
     }
 
@@ -44,6 +50,18 @@ impl PrivateKey {
                         .context("Failed to sign git object with minisign private key")?;
                 Ok(String::from(signature_box).into_bytes())
             }
+            Self::MlSignify(private_key) => {
+                let signature = ml_signify::sign(private_key, &ml_signify::hash(msg.as_ref()))
+                    .context("Failed to sign git object with ml-signify private key")?;
+
+                let key_id = ml_signify::id_from_verifying_key(&private_key.verifying_key());
+
+                Ok((key_id, &signature)
+                    .ml_signify_encode::<codecs::Signature>(Some(
+                        "signed with git-signify via ml-signify",
+                    ))
+                    .into_bytes())
+            }
         }
     }
 
@@ -52,6 +70,7 @@ impl PrivateKey {
         match self {
             Self::Signify(_) => TreeSignatureAlgo::Signify,
             Self::Minisign(_) => TreeSignatureAlgo::Minisign,
+            Self::MlSignify(_) => TreeSignatureAlgo::MlSignify,
         }
     }
 }
@@ -62,6 +81,8 @@ pub enum PublicKey {
     Signify(libsignify::PublicKey),
     /// Public key originating from [`minisign`].
     Minisign(minisign::PublicKey),
+    /// Public key originating from [`ml_signify`].
+    MlSignify(Box<ml_signify::VerifyingKey>),
 }
 
 impl PublicKey {
@@ -72,6 +93,8 @@ impl PublicKey {
                 .context("Failed to compute signify public key fingerprint"),
             Self::Minisign(public_key) => hash_bytes(public_key.to_bytes())
                 .context("Failed to compute minisign public key fingerprint"),
+            Self::MlSignify(public_key) => hash_bytes(public_key.encode())
+                .context("Failed to compute ml-signify public key fingerprint"),
         }
     }
 }
@@ -84,6 +107,8 @@ pub enum TreeSignatureVersion {
     V1,
     /// Version 2 tree signatures.
     V2,
+    /// Version 3 tree signatures.
+    V3,
 }
 
 impl TreeSignatureVersion {
@@ -92,6 +117,7 @@ impl TreeSignatureVersion {
         match blob.content() {
             b"v1" => Ok(Self::V1),
             b"v2" => Ok(Self::V2),
+            b"v3" => Ok(Self::V3),
             blob => Err(anyhow!(
                 "Invalid tree signature version {:?}",
                 String::from_utf8_lossy(blob)
@@ -101,7 +127,7 @@ impl TreeSignatureVersion {
 
     /// Return the current version.
     pub const fn current() -> Self {
-        TreeSignatureVersion::V2
+        TreeSignatureVersion::V3
     }
 
     /// Encode the version as a string.
@@ -110,6 +136,7 @@ impl TreeSignatureVersion {
             Self::V0 => "v0",
             Self::V1 => "v1",
             Self::V2 => "v2",
+            Self::V3 => "v3",
         }
     }
 }
@@ -120,6 +147,8 @@ pub enum TreeSignatureAlgo {
     Signify,
     /// Minisign key.
     Minisign,
+    /// ML-Signify key.
+    MlSignify,
 }
 
 impl TreeSignatureAlgo {
@@ -128,6 +157,7 @@ impl TreeSignatureAlgo {
         match blob.content() {
             b"signify" => Ok(Self::Signify),
             b"minisign" => Ok(Self::Minisign),
+            b"ml-signify" => Ok(Self::MlSignify),
             blob => Err(anyhow!(
                 "Invalid tree signature algorithm {:?}",
                 String::from_utf8_lossy(blob)
@@ -140,6 +170,7 @@ impl TreeSignatureAlgo {
         match self {
             Self::Signify => "signify",
             Self::Minisign => "minisign",
+            Self::MlSignify => "ml-signify",
         }
     }
 }
@@ -287,7 +318,7 @@ impl<'repo> TreeSignature<'repo> {
                                  to be signed could be found",
                     )?
                     .into_object()),
-                TreeSignatureVersion::V2 => {
+                TreeSignatureVersion::V2 | TreeSignatureVersion::V3 => {
                     anyhow::bail!("No signed `object` could be found in the tree signature");
                 }
             },
@@ -333,7 +364,9 @@ impl<'repo> TreeSignature<'repo> {
                             .map_err(Error::new)
                             .context("Failed to parse signify signature from git blob")?
                     }
-                    TreeSignatureVersion::V1 | TreeSignatureVersion::V2 => {
+                    TreeSignatureVersion::V1
+                    | TreeSignatureVersion::V2
+                    | TreeSignatureVersion::V3 => {
                         let signature_content = std::str::from_utf8(self.signature.content())
                             .context("Found non-utf8 data in signify signature content")?;
 
@@ -357,7 +390,9 @@ impl<'repo> TreeSignature<'repo> {
                     TreeSignatureVersion::V0 => {
                         anyhow::bail!("minisign public keys not supported in v0");
                     }
-                    TreeSignatureVersion::V1 | TreeSignatureVersion::V2 => {
+                    TreeSignatureVersion::V1
+                    | TreeSignatureVersion::V2
+                    | TreeSignatureVersion::V3 => {
                         let signature_content = std::str::from_utf8(self.signature.content())
                             .context("Found non-utf8 data in minisign signature content")?;
 
@@ -378,6 +413,35 @@ impl<'repo> TreeSignature<'repo> {
                 )
                 .context("Invalid minisign signature")
             }
+            PublicKey::MlSignify(public_key) => {
+                let signature = match &self.version {
+                    TreeSignatureVersion::V0
+                    | TreeSignatureVersion::V1
+                    | TreeSignatureVersion::V2 => {
+                        anyhow::bail!("ml-signify public keys are only supported from v3 onwards");
+                    }
+                    TreeSignatureVersion::V3 => {
+                        let signature_content = std::str::from_utf8(self.signature.content())
+                            .context("Found non-utf8 data in ml-signify signature content")?;
+
+                        let (_, signature) = signature_content
+                            .ml_signify_decode::<codecs::Signature>()
+                            .context("Failed to parse ml-signify signature from git blob")?;
+
+                        signature
+                    }
+                };
+
+                let dereferenced_obj = self.dereference()?;
+                let message = ml_signify::hash(dereferenced_obj.as_bytes());
+
+                anyhow::ensure!(
+                    ml_signify::verify(public_key, &message, &signature),
+                    "Invalid ml-signify signature"
+                );
+
+                Ok(())
+            }
         }
     }
 
@@ -389,7 +453,10 @@ impl<'repo> TreeSignature<'repo> {
             | (TreeSignatureVersion::V1, TreeSignatureAlgo::Signify, PublicKey::Signify(_))
             | (TreeSignatureVersion::V1, TreeSignatureAlgo::Minisign, PublicKey::Minisign(_))
             | (TreeSignatureVersion::V2, TreeSignatureAlgo::Signify, PublicKey::Signify(_))
-            | (TreeSignatureVersion::V2, TreeSignatureAlgo::Minisign, PublicKey::Minisign(_)) => {
+            | (TreeSignatureVersion::V2, TreeSignatureAlgo::Minisign, PublicKey::Minisign(_))
+            | (TreeSignatureVersion::V3, TreeSignatureAlgo::Signify, PublicKey::Signify(_))
+            | (TreeSignatureVersion::V3, TreeSignatureAlgo::Minisign, PublicKey::Minisign(_))
+            | (TreeSignatureVersion::V3, TreeSignatureAlgo::MlSignify, PublicKey::MlSignify(_)) => {
                 Ok(())
             }
             _ => {
@@ -413,7 +480,9 @@ impl<'repo> TreeSignature<'repo> {
                 let oid_bytes = blob.content();
                 Oid::from_bytes(oid_bytes).context("Failed to parse git object id from raw bytes")
             }
-            TreeSignatureVersion::V1 | TreeSignatureVersion::V2 => Ok(self.object_pointer.id()),
+            TreeSignatureVersion::V1 | TreeSignatureVersion::V2 | TreeSignatureVersion::V3 => {
+                Ok(self.object_pointer.id())
+            }
         }
     }
 }
@@ -457,6 +526,7 @@ fn determine_key_format(key_data: &str) -> Result<TreeSignatureAlgo> {
     match rest {
         s if s.starts_with("signify") => Ok(TreeSignatureAlgo::Signify),
         s if s.starts_with("minisign") => Ok(TreeSignatureAlgo::Minisign),
+        s if s.starts_with("ml-signify") => Ok(TreeSignatureAlgo::MlSignify),
         _ => Err(anyhow!("Unknown key format")),
     }
 }
@@ -522,6 +592,13 @@ fn get_public_key(path: &Path) -> Result<PublicKey> {
                     .context("Failed to decode minisign public key")?,
             )
         }
+        TreeSignatureAlgo::MlSignify => {
+            let (_, public_key) = key_data
+                .ml_signify_decode::<codecs::VerifyingKey>()
+                .context("Failed to decode ml-signify verifying key")?;
+
+            PublicKey::MlSignify(Box::new(public_key))
+        }
     })
 }
 
@@ -575,6 +652,19 @@ fn get_secret_key(path: &Path) -> Result<PrivateKey> {
                     .into_secret_key(Some(passphrase))
                     .context("Failed to decode minisign private key")?,
             )
+        }
+        TreeSignatureAlgo::MlSignify => {
+            let sealed_key = key_data
+                .ml_signify_decode::<codecs::SigningKey>()
+                .context("Failed to decode ml-signify sealed secret key")?;
+
+            let passphrase = prompt_key_passphrase(path)?;
+
+            let private_key =
+                ml_signify::seal::unseal_signing_key(&sealed_key, passphrase.as_bytes())
+                    .context("failed to unseal signing key")?;
+
+            PrivateKey::MlSignify(Box::new(private_key.signing_key().clone()))
         }
     })
 }
