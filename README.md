@@ -4,41 +4,57 @@ A tool to sign arbitrary objects in a git repository.
 
 ## Generating keys
 
-Signing keys can be generated with [`signify`], from the OpenBSD project.
+Signing keys can be generated with a variety of different tools.
+
+### Signify
+
+With [`signify`](https://man.openbsd.org/signify.1), from the OpenBSD project,
+one runs:
 
 ```
 $ signify -G -p newkey.pub -s newkey.sec
 ```
 
-If you do not wish to encrypt your keys, pass the `-n` flag to the
-command line of `signify`.
+If you do not wish to encrypt your keys, pass the `-n` flag to the command line
+of `signify`.
 
-Alternatively, [`minisign`] keys may also be used. This project provides
-a more portable alternative to [`signify`].
+### Minisign
+
+[`minisign`](https://github.com/jedisct1/minisign) provides a more portable
+alternative to [`signify`](https://man.openbsd.org/signify.1). Keys can be
+generated with:
 
 ```
 $ minisign -G -p newkey.pub -s newkey.sec
 ```
 
-`git-signify` always assumes that [`minisign`] keys are encrypted,
-albeit the CLI tool allows generating non-encrypted keys.
+`git-signify` always assumes that
+[`minisign`](https://github.com/jedisct1/minisign) keys are encrypted, albeit
+the CLI tool allows generating non-encrypted keys.
 
-[`signify`]: https://man.openbsd.org/signify.1
-[`minisign`]: https://github.com/jedisct1/minisign
+### ML-Signify
+
+[`ml-signify`](https://git.sr.ht/~sugo/ml-signify) provides post-quantum secure
+keys in the form of [ML-DSA](https://csrc.nist.gov/pubs/fips/204/final). Keys
+can be generated with:
+
+```
+$ ml-signify keygen --signing-key newkey.sec --verifying-key newkey.pub
+```
 
 ## Basic usage
 
 This program keeps track of signatures made by a keypair with a given
-fingerprint as git references. References can be fetched from and
-pushed to a remote.
+fingerprint as git references. References can be fetched from and pushed to a
+remote.
 
 ```
 $ git signify pull origin
 $ git signify push origin
 ```
 
-Verification can be done with `git signify verify`. For example, to
-verify a release of `git-signify` itself:
+Verification can be done with `git signify verify`. For example, to verify a
+release of `git-signify` itself:
 
 ```
 $ git pull --tags
@@ -67,17 +83,16 @@ following blobs:
 ?????? ???? dddddddddddddddddddddddddddddddddddddddd	object
 ```
 
-The entry `object` is a pointer to the respective git object being
-signed over, which typically assumes the form of a commit object.
-Then, `signature` contains the base64 encoded `signify` or `minisign`
-signature over the raw (20 byte) id of `object`. The remaining blobs,
-`version` and `algorithm`, represent the current version of the
-`git-signify` tree format and the algorithm (`minisign` or `signify`)
-being used, respectively.
+The entry `object` is a pointer to the respective git object being signed over,
+which typically assumes the form of a commit object. Then, `signature` contains
+the base64 encoded `signify`, `minisign`, or `ml-signify` signature over the raw
+(20 byte) id of `object`. The remaining blobs, `version` and `algorithm`,
+represent the current version of the `git-signify` tree format and the algorithm
+(`signify`, `minisign`, or `ml-signify`) being used, respectively.
 
 The tree is then committed along with a potential parent, which is the commit
-hash being signed over, if any. The resulting commit's hash is returned by
-`git signify raw sign`.
+hash being signed over, if any. The resulting commit's hash is returned by `git
+signify raw sign`.
 
 Signatures end up in `refs/signify/signatures/${key_fingerprint}/${sig_hash}`,
 where `$key_fingerprint` can be computed by `git signify fingerprint`, and
