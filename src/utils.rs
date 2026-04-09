@@ -662,7 +662,7 @@ fn get_secret_key(path: &Path) -> Result<PrivateKey> {
 
             let private_key =
                 ml_signify::seal::unseal_signing_key(&sealed_key, passphrase.as_bytes())
-                    .context("failed to unseal signing key")?;
+                    .context("Failed to unseal ml-signify secret key")?;
 
             PrivateKey::MlSignify(Box::new(private_key.signing_key().clone()))
         }
